@@ -48,10 +48,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from collections.abc import AsyncGenerator, Callable
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Final
 from uuid import uuid4
+
+# Python 3.10 compatibility for UTC
+if sys.version_info >= (3, 11):
+    from datetime import UTC
+else:
+    UTC = timezone.utc
 
 from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
 

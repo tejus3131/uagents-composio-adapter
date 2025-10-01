@@ -27,7 +27,7 @@ def test_tool_config_from_tools() -> None:
     config = ToolConfig.from_tools(
         tool_group_name="Test Tools",
         auth_config_id="test_auth_123",
-        tools=["GITHUB_CREATE_AN_ISSUE", "GITHUB_LIST_ISSUES"]
+        tools=["GITHUB_CREATE_AN_ISSUE", "GITHUB_LIST_ISSUES"],
     )
 
     assert config.tool_group_name == "Test Tools"
@@ -43,7 +43,7 @@ def test_tool_config_from_toolkits() -> None:
         tool_group_name="GitHub Tools",
         auth_config_id="test_auth_456",
         toolkit="GITHUB",
-        limit=5
+        limit=5,
     )
 
     assert config.tool_group_name == "GitHub Tools"
@@ -60,7 +60,7 @@ def test_tool_config_from_search() -> None:
         tool_group_name="Search Tools",
         auth_config_id="test_auth_789",
         search="email management",
-        limit=3
+        limit=3,
     )
 
     assert config.tool_group_name == "Search Tools"
@@ -98,7 +98,7 @@ def test_postgres_memory_config() -> None:
         port=5432,
         database="test_db",
         user="test_user",
-        password="test_password"
+        password="test_password",
     )
 
     assert config.host == "localhost"
@@ -112,7 +112,9 @@ def test_modifiers_creation() -> None:
     """Test Modifiers creation and validation."""
 
     # Test empty modifiers (should raise error)
-    with pytest.raises(ValueError, match="At least one modifier function list must be provided"):
+    with pytest.raises(
+        ValueError, match="At least one modifier function list must be provided"
+    ):
         Modifiers()
 
     # Test with schema functions
@@ -128,9 +130,7 @@ def test_modifiers_creation() -> None:
 def test_composio_error() -> None:
     """Test ComposioError exception."""
     error = ComposioError(
-        "Test error message",
-        details={"key": "value"},
-        operation="test_operation"
+        "Test error message", details={"key": "value"}, operation="test_operation"
     )
 
     assert error.message == "Test error message"

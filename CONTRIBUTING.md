@@ -130,24 +130,24 @@ async def create_tool_config(
 ) -> ToolConfig:
     """
     Create a tool configuration with validation.
-    
+
     Args:
         tool_group_name: Human-readable name for the tool group
         auth_config_id: Authentication configuration ID from Composio
         tools: Optional list of specific tools to include
         limit: Optional limit on number of tools to retrieve
-        
+
     Returns:
         ToolConfig: Validated tool configuration instance
-        
+
     Raises:
         ValueError: If required parameters are missing or invalid
     """
     if not tool_group_name.strip():
         raise ValueError("tool_group_name cannot be empty")
-        
+
     logger.info(f"Creating tool config for group: {tool_group_name}")
-    
+
     # Implementation here...
 ```
 
@@ -211,16 +211,16 @@ When reporting bugs, please include:
 A clear and concise description of what the bug is.
 
 ## Environment
-- Python version: 
-- Package version: 
-- OS and version: 
-- uAgents version: 
-- Composio version: 
+- Python version:
+- Package version:
+- OS and version:
+- uAgents version:
+- Composio version:
 
 ## Steps to Reproduce
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Expected Behavior
 What you expected to happen.
@@ -338,11 +338,11 @@ logger = logging.getLogger(__name__)
 
 class NewFeatureConfig(BaseModel):
     """Configuration for new feature."""
-    
+
     feature_name: str
     enabled: bool = True
     options: Optional[Dict[str, Any]] = None
-    
+
     class Config:
         frozen = True  # Make immutable
 
@@ -351,25 +351,25 @@ async def implement_new_feature(
 ) -> Dict[str, Any]:
     """
     Implement new feature with proper error handling.
-    
+
     Args:
         config: Feature configuration
-        
+
     Returns:
         Dict containing feature results
-        
+
     Raises:
         ConfigurationError: If configuration is invalid
     """
     logger.info(f"Implementing feature: {config.feature_name}")
-    
+
     try:
         # Implementation here
         result = {"status": "success", "feature": config.feature_name}
-        
+
         logger.info(f"Feature {config.feature_name} implemented successfully")
         return result
-        
+
     except Exception as e:
         logger.error(
             f"Failed to implement feature {config.feature_name}",

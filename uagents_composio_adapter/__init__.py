@@ -23,40 +23,35 @@ Version: 1.0.0
 License: MIT
 """
 
-from .core import (
+from .core import (  # Exceptions; Main classes; Response models; Modifier function types; Type aliases; Version and metadata
     AfterExecuteModifierFunc,
     AuthConfigId,
     AuthenticationError,
     AuthResponse,
     BeforeExecuteModifierFunc,
     ComposioConfig,
-    # Exceptions
     ComposioError,
-    # Main classes
     ComposioService,
     ConfigurationError,
     ConnectionError,
-    # Response models
     ConnectionStatus,
     Modifiers,
     PostgresMemoryConfig,
-    # Modifier function types
     SchemaModifierFunc,
     SessionId,
     ToolConfig,
     ToolRetrievalError,
     ToolSlug,
-    # Type aliases
     UserId,
     __author__,
     __license__,
-    # Version and metadata
     __version__,
 )
 
 # Re-export modifier decorators from composio
 try:
     from composio import after_execute, before_execute, schema_modifier  # type: ignore
+
     __all__ = [
         # Main classes
         "ComposioService",
@@ -64,34 +59,28 @@ try:
         "ToolConfig",
         "Modifiers",
         "PostgresMemoryConfig",
-
         # Response models
         "ConnectionStatus",
         "AuthResponse",
-
         # Exceptions
         "ComposioError",
         "AuthenticationError",
         "ConnectionError",
         "ConfigurationError",
         "ToolRetrievalError",
-
         # Type aliases
         "UserId",
         "AuthConfigId",
         "ToolSlug",
         "SessionId",
-
         # Modifier function types
         "SchemaModifierFunc",
         "BeforeExecuteModifierFunc",
         "AfterExecuteModifierFunc",
-
         # Modifier decorators
         "schema_modifier",
         "before_execute",
         "after_execute",
-
         # Version and metadata
         "__version__",
         "__author__",
@@ -106,29 +95,24 @@ except ImportError:
         "ToolConfig",
         "Modifiers",
         "PostgresMemoryConfig",
-
         # Response models
         "ConnectionStatus",
         "AuthResponse",
-
         # Exceptions
         "ComposioError",
         "AuthenticationError",
         "ConnectionError",
         "ConfigurationError",
         "ToolRetrievalError",
-
         # Type aliases
         "UserId",
         "AuthConfigId",
         "ToolSlug",
         "SessionId",
-
         # Modifier function types
         "SchemaModifierFunc",
         "BeforeExecuteModifierFunc",
         "AfterExecuteModifierFunc",
-
         # Version and metadata
         "__version__",
         "__author__",

@@ -86,28 +86,18 @@ except ImportError as e:
     ) from e
 
 try:
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import BaseMessage, HumanMessage
+    from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 except ImportError as e:
     raise ImportError(
         "langchain-core and langchain packages are required. Install with: pip install langchain langchain-core"
     ) from e
 
 try:
-    from composio import (
-        Composio,
-        after_execute,
-        before_execute,
-        schema_modifier,
-    )
-    from composio.core.models.connected_accounts import (
-        ConnectionRequest,
-    )
+    from composio import Composio, after_execute, before_execute, schema_modifier
+    from composio.core.models.connected_accounts import ConnectionRequest
     from composio.exceptions import ComposioSDKTimeoutError
-    from composio.types import (
-        Tool,
-        ToolExecuteParams,
-        ToolExecutionResponse,
-    )
+    from composio.types import Tool, ToolExecuteParams, ToolExecutionResponse
 except ImportError as e:
     raise ImportError(
         "composio package is required. Install with: pip install composio"
@@ -147,10 +137,10 @@ logger = logging.getLogger(__name__)
 
 # Type aliases for modifier functions
 SchemaModifierFunc = Callable[[str, str, Tool], Tool]
-BeforeExecuteModifierFunc = Callable[[
-    str, str, ToolExecuteParams], ToolExecuteParams]
-AfterExecuteModifierFunc = Callable[[
-    str, str, ToolExecutionResponse], ToolExecutionResponse]
+BeforeExecuteModifierFunc = Callable[[str, str, ToolExecuteParams], ToolExecuteParams]
+AfterExecuteModifierFunc = Callable[
+    [str, str, ToolExecutionResponse], ToolExecutionResponse
+]
 
 
 class Modifiers(BaseModel):
@@ -196,6 +186,7 @@ class Modifiers(BaseModel):
         before_execute_functions: Functions that modify parameters before execution
         after_execute_functions: Functions that transform results after execution
     """
+
     schema_functions: list[SchemaModifierFunc] | None = None
     """Functions that modify tool schemas before agent interaction. Used for adding/removing parameters, modifying descriptions, or setting defaults."""
 
@@ -207,19 +198,20 @@ class Modifiers(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,  # Allow function types
-        frozen=True  # Make immutable for thread safety
+        frozen=True,  # Make immutable for thread safety
     )
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_has_modifiers(self) -> Modifiers:
         """Ensure at least one modifier type is provided."""
-        if not any([
-            self.schema_functions,
-            self.before_execute_functions,
-            self.after_execute_functions
-        ]):
-            raise ValueError(
-                "At least one modifier function list must be provided")
+        if not any(
+            [
+                self.schema_functions,
+                self.before_execute_functions,
+                self.after_execute_functions,
+            ]
+        ):
+            raise ValueError("At least one modifier function list must be provided")
         return self
 
     @classmethod
@@ -255,8 +247,7 @@ class Modifiers(BaseModel):
             ValueError: If no modifiers provided
         """
         if not modifiers:
-            raise ValueError(
-                "At least one before-execute modifier must be provided")
+            raise ValueError("At least one before-execute modifier must be provided")
         return cls(before_execute_functions=list(modifiers))
 
     @classmethod
@@ -274,8 +265,7 @@ class Modifiers(BaseModel):
             ValueError: If no modifiers provided
         """
         if not modifiers:
-            raise ValueError(
-                "At least one after-execute modifier must be provided")
+            raise ValueError("At least one after-execute modifier must be provided")
         return cls(after_execute_functions=list(modifiers))
 
     @classmethod
@@ -283,7 +273,7 @@ class Modifiers(BaseModel):
         cls,
         schema_functions: list[SchemaModifierFunc] | None = None,
         before_execute_functions: list[BeforeExecuteModifierFunc] | None = None,
-        after_execute_functions: list[AfterExecuteModifierFunc] | None = None
+        after_execute_functions: list[AfterExecuteModifierFunc] | None = None,
     ) -> Modifiers:
         """
         Create modifiers with multiple types.
@@ -302,18 +292,23 @@ class Modifiers(BaseModel):
         return cls(
             schema_functions=schema_functions,
             before_execute_functions=before_execute_functions,
-            after_execute_functions=after_execute_functions
+            after_execute_functions=after_execute_functions,
         )
 
-    def to_list(self) -> list[SchemaModifierFunc | BeforeExecuteModifierFunc | AfterExecuteModifierFunc]:
+    def to_list(
+        self,
+    ) -> list[
+        SchemaModifierFunc | BeforeExecuteModifierFunc | AfterExecuteModifierFunc
+    ]:
         """
         Convert to flat list for composio.tools.get() modifiers parameter.
 
         Returns:
             Flattened list of all modifier functions in execution order
         """
-        modifiers: list[SchemaModifierFunc |
-                        BeforeExecuteModifierFunc | AfterExecuteModifierFunc] = []
+        modifiers: list[
+            SchemaModifierFunc | BeforeExecuteModifierFunc | AfterExecuteModifierFunc
+        ] = []
 
         # Add in execution order: schema -> before_execute -> after_execute
         if self.schema_functions:
@@ -334,8 +329,14 @@ class Modifiers(BaseModel):
         """
         return {
             "schema": len(self.schema_functions) if self.schema_functions else 0,
-            "before_execute": len(self.before_execute_functions) if self.before_execute_functions else 0,
-            "after_execute": len(self.after_execute_functions) if self.after_execute_functions else 0,
+            "before_execute": (
+                len(self.before_execute_functions)
+                if self.before_execute_functions
+                else 0
+            ),
+            "after_execute": (
+                len(self.after_execute_functions) if self.after_execute_functions else 0
+            ),
         }
 
 
@@ -386,6 +387,7 @@ class ToolConfig(BaseModel):
         limit: Maximum number of tools to return (1-100, default varies by filter)
         modifiers: Optional tool modifiers for customization
     """
+
     tool_group_name: str
     """Logical name for the group of tools being configured (e.g., "GitHub Tools", "Slack Tools"). Used for organization and logging."""
 
@@ -411,11 +413,9 @@ class ToolConfig(BaseModel):
     modifiers: Modifiers | None = None
     """Optional tool modifiers for customizing tool behavior (schema, before_execute, after_execute functions)."""
 
-    model_config = ConfigDict(
-        frozen=True  # Make immutable for thread safety
-    )
+    model_config = ConfigDict(frozen=True)  # Make immutable for thread safety
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_filter_combination(self) -> ToolConfig:
         """
         Ensure only valid filter combinations are used per Composio API requirements.
@@ -444,14 +444,14 @@ class ToolConfig(BaseModel):
         if self.limit is not None:
             if self.limit < 1 or self.limit > MAX_TOOLS_LIMIT:
                 raise ValueError(
-                    f"limit must be an integer between 1 and {MAX_TOOLS_LIMIT}")
+                    f"limit must be an integer between 1 and {MAX_TOOLS_LIMIT}"
+                )
 
         # Validate mutually exclusive combinations
         if has_tools:
             # Tools filter - cannot be combined with anything else
             if any([has_toolkit, has_search, has_scopes, self.limit]):
-                raise ValueError(
-                    "Tools filter cannot be combined with other filters")
+                raise ValueError("Tools filter cannot be combined with other filters")
             if not self.tools:
                 raise ValueError("tools list cannot be empty")
 
@@ -459,7 +459,8 @@ class ToolConfig(BaseModel):
             # Search filter - cannot be combined with tools or scopes
             if has_tools or has_scopes:
                 raise ValueError(
-                    "Search filter cannot be combined with tools or scopes")
+                    "Search filter cannot be combined with tools or scopes"
+                )
             if not self.search or not self.search.strip():
                 raise ValueError("search query cannot be empty")
 
@@ -471,7 +472,8 @@ class ToolConfig(BaseModel):
                 raise ValueError("scopes list cannot be empty")
             if has_search or has_tools:
                 raise ValueError(
-                    "Scopes filter cannot be combined with search or tools")
+                    "Scopes filter cannot be combined with search or tools"
+                )
 
         elif has_toolkit:
             # Toolkit filter only - valid with optional limit
@@ -479,7 +481,8 @@ class ToolConfig(BaseModel):
                 raise ValueError("toolkit name cannot be empty")
         else:
             raise ValueError(
-                "At least one filter must be specified: tools, toolkit, or search")
+                "At least one filter must be specified: tools, toolkit, or search"
+            )
 
         return self
 
@@ -489,7 +492,7 @@ class ToolConfig(BaseModel):
         tool_group_name: str,
         auth_config_id: AuthConfigId,
         tools: list[ToolSlug],
-        modifiers: Modifiers | None = None
+        modifiers: Modifiers | None = None,
     ) -> ToolConfig:
         """
         Create configuration to fetch specific tools by their slugs.
@@ -525,7 +528,12 @@ class ToolConfig(BaseModel):
         if not all(tool and tool.strip() for tool in tools):
             raise ValueError("All tool slugs must be non-empty strings")
 
-        return cls(tool_group_name=tool_group_name, auth_config_id=auth_config_id, tools=tools, modifiers=modifiers)
+        return cls(
+            tool_group_name=tool_group_name,
+            auth_config_id=auth_config_id,
+            tools=tools,
+            modifiers=modifiers,
+        )
 
     @classmethod
     def from_toolkits(
@@ -534,7 +542,7 @@ class ToolConfig(BaseModel):
         auth_config_id: AuthConfigId,
         toolkit: str,
         limit: int | None = None,
-        modifiers: Modifiers | None = None
+        modifiers: Modifiers | None = None,
     ) -> ToolConfig:
         """
         Create configuration to fetch tools from a specific toolkit.
@@ -576,7 +584,7 @@ class ToolConfig(BaseModel):
             auth_config_id=auth_config_id,
             toolkit=toolkit,
             limit=limit,
-            modifiers=modifiers
+            modifiers=modifiers,
         )
 
     @classmethod
@@ -587,7 +595,7 @@ class ToolConfig(BaseModel):
         toolkit: str,
         scopes: list[str],
         limit: int | None = None,
-        modifiers: Modifiers | None = None
+        modifiers: Modifiers | None = None,
     ) -> ToolConfig:
         """
         Create configuration to fetch tools from a toolkit filtered by OAuth scopes.
@@ -636,7 +644,7 @@ class ToolConfig(BaseModel):
             toolkit=toolkit,
             scopes=scopes,
             limit=limit,
-            modifiers=modifiers
+            modifiers=modifiers,
         )
 
     @classmethod
@@ -647,7 +655,7 @@ class ToolConfig(BaseModel):
         search: str,
         toolkit: str | None = None,
         limit: int | None = None,
-        modifiers: Modifiers | None = None
+        modifiers: Modifiers | None = None,
     ) -> ToolConfig:
         """
         Create configuration to search for tools using semantic search.
@@ -702,7 +710,7 @@ class ToolConfig(BaseModel):
             search=search,
             toolkit=toolkit,
             limit=limit,
-            modifiers=modifiers
+            modifiers=modifiers,
         )
 
 
@@ -737,6 +745,7 @@ class ComposioConfig(BaseModel):
         )
         ```
     """
+
     api_key: str
     """Composio API key for authentication. Get from https://app.composio.dev/settings. Required for all API operations."""
 
@@ -746,11 +755,9 @@ class ComposioConfig(BaseModel):
     tool_configs: list[ToolConfig] | None = None
     """List of tool configurations defining which tools to fetch. Each config specifies auth and filter parameters."""
 
-    model_config = ConfigDict(
-        frozen=True  # Make immutable for thread safety
-    )
+    model_config = ConfigDict(frozen=True)  # Make immutable for thread safety
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_config(self) -> ComposioConfig:
         """
         Validate configuration after initialization.
@@ -819,13 +826,11 @@ class ComposioConfig(BaseModel):
             )
 
         # Parse timeout from environment with validation
-        timeout_str = os.getenv(
-            "COMPOSIO_DEFAULT_TIMEOUT", str(DEFAULT_TIMEOUT))
+        timeout_str = os.getenv("COMPOSIO_DEFAULT_TIMEOUT", str(DEFAULT_TIMEOUT))
         try:
             timeout = int(timeout_str)
             if timeout < 1:
-                raise ValueError(
-                    "COMPOSIO_DEFAULT_TIMEOUT must be a positive integer")
+                raise ValueError("COMPOSIO_DEFAULT_TIMEOUT must be a positive integer")
         except ValueError as e:
             raise ValueError(
                 f"COMPOSIO_DEFAULT_TIMEOUT must be a valid positive integer, got: {timeout_str}"
@@ -849,7 +854,9 @@ class ComposioConfig(BaseModel):
 
         return {config.auth_config_id for config in self.tool_configs}
 
-    def get_tool_group_name_by_auth_config(self, auth_config_id: AuthConfigId) -> str | None:
+    def get_tool_group_name_by_auth_config(
+        self, auth_config_id: AuthConfigId
+    ) -> str | None:
         """
         Get the tool group name for a given auth config ID.
 
@@ -891,6 +898,7 @@ class ConnectionStatus(BaseModel):
             print(f"Progress: {status.active_connections}/{status.total_configs}")
         ```
     """
+
     user_connected: bool = True
     """True if all required connections are active and user can use all configured tools."""
 
@@ -903,9 +911,7 @@ class ConnectionStatus(BaseModel):
     active_connections: int = 0
     """Number of currently active connections. Should equal total_configs for full connectivity."""
 
-    model_config = ConfigDict(
-        frozen=True  # Make immutable for thread safety
-    )
+    model_config = ConfigDict(frozen=True)  # Make immutable for thread safety
 
     @property
     def connection_progress(self) -> float:
@@ -954,6 +960,7 @@ class AuthResponse(BaseModel):
             print(f"Auth failed: {response.message}")
         ```
     """
+
     connection_request: ConnectionRequest | None = None
     """ConnectionRequest object for pending authentications. Used to verify completion of auth flow."""
 
@@ -971,7 +978,7 @@ class AuthResponse(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,  # Allow function types
-        frozen=True  # Make immutable for thread safety
+        frozen=True,  # Make immutable for thread safety
     )
 
     @property
@@ -992,6 +999,7 @@ class AuthResponse(BaseModel):
 
 # Exception Classes
 
+
 class ComposioError(Exception):
     """
     Base exception for all Composio integration operations.
@@ -1010,7 +1018,7 @@ class ComposioError(Exception):
         message: str,
         *,
         details: dict[str, Any] | None = None,
-        operation: str | None = None
+        operation: str | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -1033,6 +1041,7 @@ class AuthenticationError(ComposioError):
     This includes failures in creating auth requests, verifying connections,
     and other authentication workflow issues.
     """
+
     pass
 
 
@@ -1043,6 +1052,7 @@ class ConnectionError(ComposioError):
     This includes failures in checking connection status, network issues,
     and connection state problems.
     """
+
     pass
 
 
@@ -1053,6 +1063,7 @@ class ConfigurationError(ComposioError):
     This includes invalid tool configurations, missing required parameters,
     and environment setup problems.
     """
+
     pass
 
 
@@ -1063,6 +1074,7 @@ class ToolRetrievalError(ComposioError):
     This includes failures in fetching tools, invalid tool configurations,
     and tool-related API issues.
     """
+
     pass
 
 
@@ -1133,8 +1145,7 @@ class ComposioClient:
         try:
             self._config = config
             self._composio: Composio[LangchainProvider] = Composio(
-                api_key=self._config.api_key,
-                provider=LangchainProvider()
+                api_key=self._config.api_key, provider=LangchainProvider()
             )
             self._lock = asyncio.Lock()
 
@@ -1144,19 +1155,19 @@ class ComposioClient:
                     "auth_config_ids": list(self._config.get_auth_config_ids()),
                     "tool_configs_count": len(self._config.tool_configs or []),
                     "timeout": self._config.timeout,
-                }
+                },
             )
 
         except Exception as e:
             logger.error(
                 "Failed to initialize ComposioClient",
                 extra={"error": str(e)},
-                exc_info=True
+                exc_info=True,
             )
             raise ConfigurationError(
                 "Failed to initialize Composio client",
                 details={"original_error": str(e)},
-                operation="client_initialization"
+                operation="client_initialization",
             ) from e
 
     async def connection_exists(
@@ -1198,7 +1209,7 @@ class ComposioClient:
         if not auth_config_ids:
             raise ConfigurationError(
                 "No auth_config_ids found in configuration",
-                operation="connection_check"
+                operation="connection_check",
             )
 
         logger.info(
@@ -1238,7 +1249,7 @@ class ComposioClient:
                 user_connected=len(connections_required) == 0,
                 connections_required=connections_required,
                 total_configs=len(auth_config_ids),
-                active_connections=active_connections
+                active_connections=active_connections,
             )
 
             logger.info(
@@ -1249,7 +1260,7 @@ class ComposioClient:
                     "active_connections": active_connections,
                     "total_configs": len(auth_config_ids),
                     "missing_connections": len(connections_required),
-                }
+                },
             )
 
             return connection_status
@@ -1260,7 +1271,7 @@ class ComposioClient:
                 extra={
                     "user_id": user_id,
                     "auth_config_ids": auth_config_ids,
-                    "error": str(e)
+                    "error": str(e),
                 },
                 exc_info=True,
             )
@@ -1269,9 +1280,9 @@ class ComposioClient:
                 details={
                     "user_id": user_id,
                     "auth_config_ids": auth_config_ids,
-                    "original_error": str(e)
+                    "original_error": str(e),
                 },
-                operation="connection_check"
+                operation="connection_check",
             ) from e
 
     async def create_auth_request(
@@ -1279,7 +1290,7 @@ class ComposioClient:
         user_id: UserId,
         auth_config_id: AuthConfigId,
         *,
-        callback_url: str | None = None
+        callback_url: str | None = None,
     ) -> AuthResponse:
         """
         Create an authentication request for a user.
@@ -1341,8 +1352,7 @@ class ComposioClient:
                     link_params["callback_url"] = callback_url
 
                 connection_request = await asyncio.to_thread(
-                    self._composio.connected_accounts.link,
-                    **link_params
+                    self._composio.connected_accounts.link, **link_params
                 )
 
             if not connection_request.redirect_url:
@@ -1351,12 +1361,12 @@ class ComposioClient:
                     extra={
                         "user_id": user_id,
                         "auth_config_id": auth_config_id,
-                    }
+                    },
                 )
                 return AuthResponse(
                     status="failed",
                     message="Authentication request created but no redirect URL provided. "
-                           "This may indicate an issue with the auth configuration.",
+                    "This may indicate an issue with the auth configuration.",
                 )
 
             # Truncate URL for logging (security)
@@ -1388,7 +1398,7 @@ class ComposioClient:
                 extra={
                     "user_id": user_id,
                     "auth_config_id": auth_config_id,
-                    "error": str(e)
+                    "error": str(e),
                 },
                 exc_info=True,
             )
@@ -1399,10 +1409,7 @@ class ComposioClient:
             )
 
     async def verify_auth_request(
-        self,
-        connection_request: ConnectionRequest,
-        *,
-        timeout: int | None = None
+        self, connection_request: ConnectionRequest, *, timeout: int | None = None
     ) -> AuthResponse:
         """
         Verify an authentication request and wait for completion.
@@ -1445,15 +1452,14 @@ class ComposioClient:
             ```
         """
         if not connection_request:
-            raise ValueError(
-                "connection_request is required and cannot be None")
+            raise ValueError("connection_request is required and cannot be None")
 
         effective_timeout = timeout or self._config.timeout
 
         logger.info(
             "Starting authentication verification",
             extra={
-                "connection_request_id": getattr(connection_request, 'id', 'unknown'),
+                "connection_request_id": getattr(connection_request, "id", "unknown"),
                 "timeout": effective_timeout,
             },
         )
@@ -1483,7 +1489,7 @@ class ComposioClient:
                 logger.warning(
                     "Authentication verification completed but connection not active",
                     extra={
-                        "account_id": getattr(connected_account, 'id', 'unknown'),
+                        "account_id": getattr(connected_account, "id", "unknown"),
                         "account_status": connected_account.status,
                     },
                 )
@@ -1506,7 +1512,7 @@ class ComposioClient:
             return AuthResponse(
                 status="timeout",
                 message=f"Authentication timed out after {effective_timeout} seconds. "
-                       f"User may not have completed the authentication process.",
+                f"User may not have completed the authentication process.",
             )
 
         except Exception as e:
@@ -1525,10 +1531,7 @@ class ComposioClient:
                 message=f"Authentication verification failed: {str(e)}",
             )
 
-    async def get_tools(
-        self,
-        user_id: UserId
-    ) -> list[Any]:
+    async def get_tools(self, user_id: UserId) -> list[Any]:
         """
         Retrieve tools for a user based on configured tool specifications.
 
@@ -1569,8 +1572,7 @@ class ComposioClient:
 
         if not self._config.tool_configs:
             raise ConfigurationError(
-                "No tool configurations provided",
-                operation="tool_retrieval"
+                "No tool configurations provided", operation="tool_retrieval"
             )
 
         logger.info(
@@ -1592,11 +1594,14 @@ class ComposioClient:
                         "user_id": user_id,
                         "auth_config_id": config.auth_config_id,
                         "config_type": self._get_config_type(config),
-                    }
+                    },
                 )
 
                 async with self._lock:
-                    def get_tools_for_config(current_config: ToolConfig = config) -> list[Any]:
+
+                    def get_tools_for_config(
+                        current_config: ToolConfig = config,
+                    ) -> list[Any]:
                         # Build parameters dynamically based on config type
                         params: dict[str, Any] = {"user_id": user_id}
 
@@ -1630,16 +1635,17 @@ class ComposioClient:
 
                     try:
                         retrieved_tools = await asyncio.to_thread(get_tools_for_config)
-                        tool_count = len(
-                            retrieved_tools) if retrieved_tools else 0
+                        tool_count = len(retrieved_tools) if retrieved_tools else 0
 
                         all_tools.extend(retrieved_tools or [])
-                        config_results.append({
-                            "auth_config_id": config.auth_config_id,
-                            "config_type": self._get_config_type(config),
-                            "tool_count": tool_count,
-                            "success": True
-                        })
+                        config_results.append(
+                            {
+                                "auth_config_id": config.auth_config_id,
+                                "config_type": self._get_config_type(config),
+                                "tool_count": tool_count,
+                                "success": True,
+                            }
+                        )
 
                         logger.debug(
                             f"Retrieved {tool_count} tools from config {i + 1}",
@@ -1647,7 +1653,7 @@ class ComposioClient:
                                 "user_id": user_id,
                                 "auth_config_id": config.auth_config_id,
                                 "tool_count": tool_count,
-                            }
+                            },
                         )
 
                     except Exception as config_error:
@@ -1659,31 +1665,34 @@ class ComposioClient:
                                 "config_type": self._get_config_type(config),
                                 "error": str(config_error),
                             },
-                            exc_info=True
+                            exc_info=True,
                         )
-                        config_results.append({
-                            "auth_config_id": config.auth_config_id,
-                            "config_type": self._get_config_type(config),
-                            "tool_count": 0,
-                            "success": False,
-                            "error": str(config_error)
-                        })
+                        config_results.append(
+                            {
+                                "auth_config_id": config.auth_config_id,
+                                "config_type": self._get_config_type(config),
+                                "tool_count": 0,
+                                "success": False,
+                                "error": str(config_error),
+                            }
+                        )
 
             # Remove duplicates while preserving order
             unique_tools: list[Any] = []
             seen_tool_names: set[str] = set()
 
             for tool in all_tools:
-                tool_name: str = getattr(
-                    tool, 'name', getattr(tool, 'slug', str(tool)))
+                tool_name: str = getattr(tool, "name", getattr(tool, "slug", str(tool)))
                 if tool_name not in seen_tool_names:
                     unique_tools.append(tool)
                     seen_tool_names.add(tool_name)
 
             successful_configs = sum(
-                1 for result in config_results if result['success'])
-            total_retrieved = sum(result['tool_count']
-                                  for result in config_results if result['success'])
+                1 for result in config_results if result["success"]
+            )
+            total_retrieved = sum(
+                result["tool_count"] for result in config_results if result["success"]
+            )
 
             logger.info(
                 "Tool retrieval completed",
@@ -1703,7 +1712,7 @@ class ComposioClient:
                     extra={
                         "user_id": user_id,
                         "config_results": config_results,
-                    }
+                    },
                 )
 
             return unique_tools
@@ -1723,9 +1732,9 @@ class ComposioClient:
                 details={
                     "user_id": user_id,
                     "tool_configs_count": len(self._config.tool_configs),
-                    "original_error": str(e)
+                    "original_error": str(e),
                 },
-                operation="tool_retrieval"
+                operation="tool_retrieval",
             ) from e
 
     def _get_config_type(self, config: ToolConfig) -> str:
@@ -1829,14 +1838,11 @@ class PostgresMemoryConfig(BaseModel):
             password = os.getenv("PSQL_PASSWORD")
 
             if not database:
-                raise ValueError(
-                    "PSQL_DATABASE environment variable is required")
+                raise ValueError("PSQL_DATABASE environment variable is required")
             if not user:
-                raise ValueError(
-                    "PSQL_USERNAME environment variable is required")
+                raise ValueError("PSQL_USERNAME environment variable is required")
             if not password:
-                raise ValueError(
-                    "PSQL_PASSWORD environment variable is required")
+                raise ValueError("PSQL_PASSWORD environment variable is required")
             port = int(port_str)
             sslmode = os.getenv("PSQL_SSLMODE", "prefer")
             max_size = int(os.getenv("PSQL_MAX_SIZE", "20"))
@@ -1857,7 +1863,8 @@ class PostgresMemoryConfig(BaseModel):
             raise ValueError(f"Invalid environment variable: {ve}") from ve
         except Exception as e:
             raise ValueError(
-                f"Error loading PostgresMemoryConfig from environment: {e}") from e
+                f"Error loading PostgresMemoryConfig from environment: {e}"
+            ) from e
 
     async def initialize_db_pool(self) -> AsyncConnectionPool[Any]:
         """
@@ -1884,8 +1891,8 @@ class PostgresMemoryConfig(BaseModel):
                 "database": self.database,
                 "user": self.user,
                 "sslmode": self.sslmode,
-                "max_size": self.max_size
-            }
+                "max_size": self.max_size,
+            },
         )
 
         try:
@@ -1900,7 +1907,7 @@ class PostgresMemoryConfig(BaseModel):
                     "prepare_threshold": self.prepare_threshold,
                     "row_factory": self.row_factory,
                 },
-                open=False  # Don't open in constructor to avoid deprecation warning
+                open=False,  # Don't open in constructor to avoid deprecation warning
             )
 
             # Explicitly open the pool
@@ -1908,7 +1915,7 @@ class PostgresMemoryConfig(BaseModel):
 
             logger.info(
                 "PostgreSQL connection pool initialized and opened successfully",
-                extra={"max_size": self.max_size, "database": self.database}
+                extra={"max_size": self.max_size, "database": self.database},
             )
 
             return pool
@@ -1921,9 +1928,9 @@ class PostgresMemoryConfig(BaseModel):
                     "port": self.port,
                     "database": self.database,
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
 
@@ -2059,32 +2066,37 @@ class ComposioService:
             extra={
                 "has_memory_config": memory_config is not None,
                 "tool_configs_count": len(composio_config.tool_configs or []),
-                "auth_config_ids": list(composio_config.get_auth_config_ids())
-            }
+                "auth_config_ids": list(composio_config.get_auth_config_ids()),
+            },
         )
 
         # Resolve API configuration from parameters or environment
         api_key = api_key or os.getenv("ASI_API_KEY")
         if not api_key:
             logger.error(
-                "API key not provided in parameter or ASI_API_KEY environment variable")
+                "API key not provided in parameter or ASI_API_KEY environment variable"
+            )
             raise ValueError(
-                "API key must be provided via parameter or ASI_API_KEY env var")
+                "API key must be provided via parameter or ASI_API_KEY env var"
+            )
 
-        base_url = base_url or os.getenv(
-            "ASI_BASE_URL", "https://api.asi1.ai/v1")
+        base_url = base_url or os.getenv("ASI_BASE_URL", "https://api.asi1.ai/v1")
         if not base_url:
             logger.error(
-                "Base URL not provided in parameter or ASI_BASE_URL environment variable")
+                "Base URL not provided in parameter or ASI_BASE_URL environment variable"
+            )
             raise ValueError(
-                "Base URL must be provided via parameter or ASI_BASE_URL env var")
+                "Base URL must be provided via parameter or ASI_BASE_URL env var"
+            )
 
         model = model_name or os.getenv("ASI_MODEL_NAME", "asi1-mini")
         if not model:
             logger.error(
-                "Model name not provided in parameter or ASI_MODEL_NAME environment variable")
+                "Model name not provided in parameter or ASI_MODEL_NAME environment variable"
+            )
             raise ValueError(
-                "Model name must be provided via parameter or ASI_MODEL_NAME env var")
+                "Model name must be provided via parameter or ASI_MODEL_NAME env var"
+            )
 
         # Initialize instance variables
         self._setup_completed = False
@@ -2094,17 +2106,16 @@ class ComposioService:
         try:
             # Initialize language model client
             self._llm = ChatOpenAI(
-                model=model,
-                api_key=SecretStr(api_key),
-                base_url=base_url,
-                verbose=True
+                model=model, api_key=SecretStr(api_key), base_url=base_url, verbose=True
             )
             logger.info(
                 "Language model client initialized successfully",
                 extra={
                     "model": model,
-                    "base_url": base_url[:50] + "..." if len(base_url) > 50 else base_url
-                }
+                    "base_url": (
+                        base_url[:50] + "..." if len(base_url) > 50 else base_url
+                    ),
+                },
             )
 
             # Initialize Composio client
@@ -2120,12 +2131,12 @@ class ComposioService:
             logger.error(
                 "Failed to initialize ComposioService components",
                 extra={"error": str(e), "error_type": type(e).__name__},
-                exc_info=True
+                exc_info=True,
             )
             raise ConfigurationError(
                 "Failed to initialize ComposioService",
                 details={"original_error": str(e)},
-                operation="service_initialization"
+                operation="service_initialization",
             ) from e
 
         logger.info(
@@ -2133,16 +2144,12 @@ class ComposioService:
             extra={
                 "service_id": id(self),
                 "memory_enabled": memory_config is not None,
-                "tools_configured": len(composio_config.tool_configs or [])
-            }
+                "tools_configured": len(composio_config.tool_configs or []),
+            },
         )
 
     async def _send_chat_message(
-        self,
-        text: str,
-        ctx: Context,
-        sender: str,
-        end_session: bool = False
+        self, text: str, ctx: Context, sender: str, end_session: bool = False
     ) -> None:
         """
         Send a chat message to a user through the chat protocol.
@@ -2163,27 +2170,28 @@ class ComposioService:
                     "sender": sender,
                     "text_length": len(text),
                     "end_session": end_session,
-                    "session_id": str(ctx.session) if hasattr(ctx, 'session') else None
-                }
+                    "session_id": str(ctx.session) if hasattr(ctx, "session") else None,
+                },
             )
 
-            content: list[AgentContent] = [
-                TextContent(type="text", text=text)
-            ]
+            content: list[AgentContent] = [TextContent(type="text", text=text)]
 
             if end_session:
                 content.append(EndSessionContent(type="end-session"))
                 logger.debug("Added end-session signal to message")
 
-            await ctx.send(sender, ChatMessage(
-                timestamp=datetime.now(UTC),
-                msg_id=uuid4(),
-                content=content,
-            ))
+            await ctx.send(
+                sender,
+                ChatMessage(
+                    timestamp=datetime.now(UTC),
+                    msg_id=uuid4(),
+                    content=content,
+                ),
+            )
 
             logger.debug(
                 "Chat message sent successfully",
-                extra={"sender": sender, "message_length": len(text)}
+                extra={"sender": sender, "message_length": len(text)},
             )
 
         except Exception as e:
@@ -2193,17 +2201,17 @@ class ComposioService:
                     "sender": sender,
                     "text_length": len(text),
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             # Don't re-raise to avoid breaking the conversation flow
             # The caller should handle message delivery failures gracefully
 
     async def _authenticate_user(
-            self,
-            user_id: UserId,
-            auth_config_id: AuthConfigId,
+        self,
+        user_id: UserId,
+        auth_config_id: AuthConfigId,
     ) -> AsyncGenerator[str, None]:
         """
         Authenticate a user for a specific auth configuration.
@@ -2230,15 +2238,16 @@ class ComposioService:
             extra={
                 "user_id": user_id,
                 "auth_config_id": auth_config_id,
-                "tool_group": self._composio_config.get_tool_group_name_by_auth_config(auth_config_id)
-            }
+                "tool_group": self._composio_config.get_tool_group_name_by_auth_config(
+                    auth_config_id
+                ),
+            },
         )
 
         try:
             # Create auth request for the specified auth config
             auth_response = await self._client.create_auth_request(
-                user_id,
-                auth_config_id
+                user_id, auth_config_id
             )
 
             logger.debug(
@@ -2247,8 +2256,8 @@ class ComposioService:
                     "user_id": user_id,
                     "auth_config_id": auth_config_id,
                     "status": auth_response.status,
-                    "has_redirect_url": auth_response.redirect_url is not None
-                }
+                    "has_redirect_url": auth_response.redirect_url is not None,
+                },
             )
 
             if auth_response.is_pending and auth_response.redirect_url:
@@ -2256,30 +2265,31 @@ class ComposioService:
                     error_msg = "Connection request object missing in auth response."
                     logger.error(
                         error_msg,
-                        extra={"user_id": user_id,
-                               "auth_config_id": auth_config_id}
+                        extra={"user_id": user_id, "auth_config_id": auth_config_id},
                     )
                     yield "Sorry, an error occurred while creating the authentication request. Please try again later."
                     return
 
-                tool_group_name = self._composio_config.get_tool_group_name_by_auth_config(
-                    auth_config_id)
+                tool_group_name = (
+                    self._composio_config.get_tool_group_name_by_auth_config(
+                        auth_config_id
+                    )
+                )
                 logger.info(
                     "Authentication URL provided to user",
                     extra={
                         "user_id": user_id,
                         "auth_config_id": auth_config_id,
                         "tool_group": tool_group_name,
-                        "redirect_url_length": len(auth_response.redirect_url)
-                    }
+                        "redirect_url_length": len(auth_response.redirect_url),
+                    },
                 )
-                yield f"Please authenticate by [clicking here]({auth_response.redirect_url}) to connect with {tool_group_name}..."
+                yield f"To connect with {tool_group_name}, please authenticate by [clicking here]({auth_response.redirect_url})..."
 
                 # Wait for user to complete authentication
                 logger.debug(
                     "Waiting for user to complete authentication",
-                    extra={"user_id": user_id,
-                           "auth_config_id": auth_config_id}
+                    extra={"user_id": user_id, "auth_config_id": auth_config_id},
                 )
                 verify_response = await self._client.verify_auth_request(
                     auth_response.connection_request
@@ -2291,16 +2301,15 @@ class ComposioService:
                         extra={
                             "user_id": user_id,
                             "auth_config_id": auth_config_id,
-                            "connection_id": verify_response.connection_id
-                        }
+                            "connection_id": verify_response.connection_id,
+                        },
                     )
                     yield "Authentication successful!"
 
                 elif verify_response.status == "timeout":
                     logger.warning(
                         "Authentication timed out, retrying",
-                        extra={"user_id": user_id,
-                               "auth_config_id": auth_config_id}
+                        extra={"user_id": user_id, "auth_config_id": auth_config_id},
                     )
                     yield "Authentication timed out. Please try again."
                     async for msg in self._authenticate_user(user_id, auth_config_id):
@@ -2314,20 +2323,22 @@ class ComposioService:
                             "user_id": user_id,
                             "auth_config_id": auth_config_id,
                             "status": verify_response.status,
-                            "message": verify_response.message
-                        }
+                            "message": verify_response.message,
+                        },
                     )
                     yield f"Authentication failed: {verify_response.message}"
                     return
             else:
-                error_msg = f"Failed to create authentication request: {auth_response.message}"
+                error_msg = (
+                    f"Failed to create authentication request: {auth_response.message}"
+                )
                 logger.error(
                     error_msg,
                     extra={
                         "user_id": user_id,
                         "auth_config_id": auth_config_id,
-                        "status": auth_response.status
-                    }
+                        "status": auth_response.status,
+                    },
                 )
                 yield "Sorry, an error occurred while creating the authentication request. Please try again later."
                 return
@@ -2339,16 +2350,15 @@ class ComposioService:
                     "user_id": user_id,
                     "auth_config_id": auth_config_id,
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             yield "Sorry, an unexpected error occurred during authentication. Please try again later."
             return
 
     async def _check_user_connections(
-            self,
-            user_id: UserId
+        self, user_id: UserId
     ) -> AsyncGenerator[str, None]:
         """
         Check and establish user connections for all required auth configurations.
@@ -2371,8 +2381,10 @@ class ComposioService:
             "Checking user connections",
             extra={
                 "user_id": user_id,
-                "required_auth_configs": list(self._composio_config.get_auth_config_ids())
-            }
+                "required_auth_configs": list(
+                    self._composio_config.get_auth_config_ids()
+                ),
+            },
         )
 
         try:
@@ -2386,20 +2398,22 @@ class ComposioService:
                     "user_connected": status.user_connected,
                     "active_connections": status.active_connections,
                     "total_configs": status.total_configs,
-                    "missing_connections": len(status.connections_required)
-                }
+                    "missing_connections": len(status.connections_required),
+                },
             )
 
             if not status.user_connected:
                 if not status.connections_required:
-                    error_msg = "No authentication configurations available for connection."
+                    error_msg = (
+                        "No authentication configurations available for connection."
+                    )
                     logger.error(
                         error_msg,
                         extra={
                             "user_id": user_id,
                             "total_configs": status.total_configs,
-                            "active_connections": status.active_connections
-                        }
+                            "active_connections": status.active_connections,
+                        },
                     )
                     yield "No authentication configurations available for connection."
                     return
@@ -2409,24 +2423,25 @@ class ComposioService:
                     extra={
                         "user_id": user_id,
                         "missing_connections": status.connections_required,
-                        "connection_progress": f"{status.active_connections}/{status.total_configs}"
-                    }
+                        "connection_progress": f"{status.active_connections}/{status.total_configs}",
+                    },
                 )
 
                 # Authenticate each missing connection
                 for auth_config_id in status.connections_required:
                     logger.debug(
                         "Starting authentication for missing connection",
-                        extra={"user_id": user_id,
-                               "auth_config_id": auth_config_id}
+                        extra={"user_id": user_id, "auth_config_id": auth_config_id},
                     )
-                    async for auth_msg in self._authenticate_user(user_id, auth_config_id):
+                    async for auth_msg in self._authenticate_user(
+                        user_id, auth_config_id
+                    ):
                         yield auth_msg
 
                 # Re-check connections after authentication attempts
                 logger.debug(
                     "Re-checking connections after authentication attempts",
-                    extra={"user_id": user_id}
+                    extra={"user_id": user_id},
                 )
                 async for conn_msg in self._check_user_connections(user_id):
                     yield conn_msg
@@ -2437,8 +2452,8 @@ class ComposioService:
                     extra={
                         "user_id": user_id,
                         "active_connections": status.active_connections,
-                        "total_configs": status.total_configs
-                    }
+                        "total_configs": status.total_configs,
+                    },
                 )
 
         except Exception as e:
@@ -2447,18 +2462,48 @@ class ComposioService:
                 extra={
                     "user_id": user_id,
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             yield "Sorry, an error occurred while checking your connections. Please try again later."
 
         return
 
+    async def _create_pre_model_hook(
+        self,
+        max_tokens: int = 100000,
+        strategy: str = "last",
+    ) -> Callable[[dict[str, Any]], dict[str, list[BaseMessage]]]:
+        """
+        Factory function to create a pre_model_hook with custom configuration.
+
+        Args:
+            max_tokens: Maximum number of tokens to keep in history.
+            strategy: Trimming strategy ('last', 'first', etc.).
+
+        Returns:
+            Configured pre_model_hook function.
+        """
+
+        def pre_model_hook(state: dict[str, Any]) -> dict[str, list[BaseMessage]]:
+            trimmed_messages: list[BaseMessage] = trim_messages(
+                state["messages"],
+                strategy=strategy,
+                token_counter=count_tokens_approximately,
+                max_tokens=max_tokens,
+                start_on="human",
+                end_on=("human", "tool"),
+            )
+            return {"llm_input_messages": trimmed_messages}
+
+        return pre_model_hook
+
     async def _create_agent(
         self,
         tools: list[Any],
-        memory: AsyncPostgresSaver | None = None
+        memory: AsyncPostgresSaver | None = None,
+        max_history_tokens: int = 100000,
     ) -> CompiledStateGraph[Any, Any, Any, Any]:
         """
         Create a LangChain ReAct agent with the provided tools and optional memory.
@@ -2482,14 +2527,17 @@ class ComposioService:
             extra={
                 "tools_count": len(tools),
                 "has_memory": memory is not None,
-                "model": getattr(self._llm, 'model_name', 'unknown')
-            }
+                "model": getattr(self._llm, "model_name", "unknown"),
+            },
         )
 
         try:
             config: dict[str, Any] = {
                 "model": self._llm,
                 "tools": tools,
+                "pre_model_hook": await self._create_pre_model_hook(
+                    max_tokens=max_history_tokens, strategy="last"
+                ),
             }
 
             if memory:
@@ -2505,8 +2553,8 @@ class ComposioService:
                 extra={
                     "agent_type": "ReAct",
                     "tools_configured": len(tools),
-                    "memory_enabled": memory is not None
-                }
+                    "memory_enabled": memory is not None,
+                },
             )
 
             return agent
@@ -2518,18 +2566,13 @@ class ComposioService:
                     "tools_count": len(tools),
                     "has_memory": memory is not None,
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
 
-    async def _run_agent_query(
-        self,
-        agent: Any,
-        query: str,
-        session_id: str
-    ) -> str:
+    async def _run_agent_query(self, agent: Any, query: str, session_id: str) -> str:
         """
         Execute a query against the LangChain agent and return the response.
 
@@ -2553,8 +2596,8 @@ class ComposioService:
             extra={
                 "session_id": session_id,
                 "query_length": len(query),
-                "query_preview": query[:100] + "..." if len(query) > 100 else query
-            }
+                "query_preview": query[:100] + "..." if len(query) > 100 else query,
+            },
         )
 
         try:
@@ -2562,10 +2605,12 @@ class ComposioService:
             chunk_count = 0
             tool_calls_count = 0
 
+            content = f"Fulfill the following user request: {query} \n by using the most appropriate tool from your available tools."
+
             # Stream the agent's response processing
             async for chunk in agent.astream(
-                {"messages": [HumanMessage(content=query)]},
-                {"configurable": {"thread_id": session_id}}
+                {"messages": [HumanMessage(content=content)]},
+                {"configurable": {"thread_id": session_id}},
             ):
                 chunk_count += 1
                 logger.debug(
@@ -2573,26 +2618,28 @@ class ComposioService:
                     extra={
                         "session_id": session_id,
                         "chunk_number": chunk_count,
-                    }
+                    },
                 )
 
                 if "agent" in chunk:
                     for message in chunk["agent"]["messages"]:
-                        if hasattr(message, 'content') and message.content:
+                        if hasattr(message, "content") and message.content:
                             response_content = message.content
                             logger.debug(
                                 "Extracted response content from agent message",
                                 extra={
                                     "session_id": session_id,
-                                    "content_length": len(response_content)
-                                }
+                                    "content_length": len(response_content),
+                                },
                             )
 
                 # Count tool calls for logging
                 if "tools" in chunk:
                     tool_calls_count += len(chunk.get("tools", []))
 
-            final_response = response_content or "I couldn't generate a response to your query."
+            final_response = (
+                response_content or "I couldn't generate a response to your query."
+            )
 
             logger.info(
                 "Agent query completed",
@@ -2601,8 +2648,8 @@ class ComposioService:
                     "chunks_processed": chunk_count,
                     "tool_calls": tool_calls_count,
                     "response_length": len(final_response),
-                    "has_response": bool(response_content)
-                }
+                    "has_response": bool(response_content),
+                },
             )
 
             return final_response
@@ -2614,9 +2661,9 @@ class ComposioService:
                     "session_id": session_id,
                     "query_length": len(query),
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             return f"An error occurred while processing your query: {str(e)}"
 
@@ -2655,15 +2702,15 @@ class ComposioService:
                 "user_id": user_id,
                 "query_length": len(query),
                 "has_memory_config": self._memory_config is not None,
-                "query_preview": query[:50] + "..." if len(query) > 50 else query
-            }
+                "query_preview": query[:50] + "..." if len(query) > 50 else query,
+            },
         )
 
         try:
             # Step 1: Check and establish user connections
             logger.debug(
                 "Checking user connections",
-                extra={"session_id": session_id, "user_id": user_id}
+                extra={"session_id": session_id, "user_id": user_id},
             )
             async for conn_msg in self._check_user_connections(user_id):
                 yield conn_msg
@@ -2671,7 +2718,7 @@ class ComposioService:
             # Step 2: Retrieve tools for the user
             logger.debug(
                 "Retrieving tools for user",
-                extra={"session_id": session_id, "user_id": user_id}
+                extra={"session_id": session_id, "user_id": user_id},
             )
             tools = await self._client.get_tools(user_id)
             logger.info(
@@ -2679,15 +2726,15 @@ class ComposioService:
                 extra={
                     "session_id": session_id,
                     "user_id": user_id,
-                    "tools_count": len(tools)
-                }
+                    "tools_count": len(tools),
+                },
             )
 
             # Step 3: Set up memory and create agent
             if self._memory_config:
                 logger.debug(
                     "Using PostgreSQL memory configuration",
-                    extra={"session_id": session_id, "user_id": user_id}
+                    extra={"session_id": session_id, "user_id": user_id},
                 )
 
                 # Initialize database pool if not already done
@@ -2711,12 +2758,10 @@ class ComposioService:
                     # Step 4: Process the query
                     logger.debug(
                         "Processing query with memory-enabled agent",
-                        extra={"session_id": session_id, "user_id": user_id}
+                        extra={"session_id": session_id, "user_id": user_id},
                     )
                     response = await self._run_agent_query(
-                        agent=agent,
-                        query=query,
-                        session_id=session_id
+                        agent=agent, query=query, session_id=session_id
                     )
                     yield response
                     return
@@ -2724,7 +2769,7 @@ class ComposioService:
             else:
                 logger.debug(
                     "Using stateless agent (no memory)",
-                    extra={"session_id": session_id, "user_id": user_id}
+                    extra={"session_id": session_id, "user_id": user_id},
                 )
 
                 # Create agent without memory
@@ -2733,12 +2778,10 @@ class ComposioService:
                 # Step 4: Process the query
                 logger.debug(
                     "Processing query with stateless agent",
-                    extra={"session_id": session_id, "user_id": user_id}
+                    extra={"session_id": session_id, "user_id": user_id},
                 )
                 response = await self._run_agent_query(
-                    agent=agent,
-                    query=query,
-                    session_id=session_id
+                    agent=agent, query=query, session_id=session_id
                 )
                 yield response
                 return
@@ -2751,9 +2794,9 @@ class ComposioService:
                     "user_id": user_id,
                     "query_length": len(query),
                     "error": str(e),
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             yield "Sorry, an unexpected error occurred while processing your query. Please try again later."
             return
@@ -2783,8 +2826,11 @@ class ComposioService:
             The protocol handlers are set up once and reused across all conversations.
             Each handler includes comprehensive error handling and structured logging.
         """
+
         @self._protocol.on_message(ChatAcknowledgement)
-        async def _handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement) -> None:
+        async def _handle_ack(
+            ctx: Context, sender: str, msg: ChatAcknowledgement
+        ) -> None:
             """Handle acknowledgement messages from users."""
             try:
                 logger.debug(
@@ -2792,20 +2838,23 @@ class ComposioService:
                     extra={
                         "sender": sender,
                         "acknowledged_msg_id": str(msg.acknowledged_msg_id),
-                        "session_id": str(ctx.session) if hasattr(ctx, 'session') else None
-                    }
+                        "session_id": (
+                            str(ctx.session) if hasattr(ctx, "session") else None
+                        ),
+                    },
                 )
                 ctx.logger.info(
-                    f"Acknowledgement received from {sender} for message {msg.acknowledged_msg_id}")
+                    f"Acknowledgement received from {sender} for message {msg.acknowledged_msg_id}"
+                )
             except Exception as e:
                 logger.error(
                     "Error handling chat acknowledgement",
                     extra={
                         "sender": sender,
                         "error": str(e),
-                        "error_type": type(e).__name__
+                        "error_type": type(e).__name__,
                     },
-                    exc_info=True
+                    exc_info=True,
                 )
 
         @self._protocol.on_message(ChatMessage)
@@ -2816,28 +2865,30 @@ class ComposioService:
                     "Chat message received",
                     extra={
                         "sender": sender,
-                        "session_id": str(ctx.session) if hasattr(ctx, 'session') else None,
+                        "session_id": (
+                            str(ctx.session) if hasattr(ctx, "session") else None
+                        ),
                         "message_id": str(msg.msg_id),
                         "content_types": [type(item).__name__ for item in msg.content],
-                        "content_count": len(msg.content)
-                    }
+                        "content_count": len(msg.content),
+                    },
                 )
 
                 ctx.logger.info(
-                    f"Message received from {sender} in session: {ctx.session}")
+                    f"Message received from {sender} in session: {ctx.session}"
+                )
 
                 # Send acknowledgement
                 try:
                     await ctx.send(
                         sender,
                         ChatAcknowledgement(
-                            timestamp=datetime.now(UTC),
-                            acknowledged_msg_id=msg.msg_id
+                            timestamp=datetime.now(UTC), acknowledged_msg_id=msg.msg_id
                         ),
                     )
                     logger.debug(
                         "Acknowledgement sent",
-                        extra={"sender": sender, "message_id": str(msg.msg_id)}
+                        extra={"sender": sender, "message_id": str(msg.msg_id)},
                     )
                 except Exception as ack_error:
                     logger.error(
@@ -2845,9 +2896,9 @@ class ComposioService:
                         extra={
                             "sender": sender,
                             "message_id": str(msg.msg_id),
-                            "error": str(ack_error)
+                            "error": str(ack_error),
                         },
-                        exc_info=True
+                        exc_info=True,
                     )
 
                 # Process message content
@@ -2859,8 +2910,12 @@ class ComposioService:
                                 "sender": sender,
                                 "item_index": i,
                                 "item_type": type(item).__name__,
-                                "session_id": str(ctx.session) if hasattr(ctx, 'session') else None
-                            }
+                                "session_id": (
+                                    str(ctx.session)
+                                    if hasattr(ctx, "session")
+                                    else None
+                                ),
+                            },
                         )
 
                         if isinstance(item, StartSessionContent):
@@ -2868,30 +2923,42 @@ class ComposioService:
                                 "Session started",
                                 extra={
                                     "sender": sender,
-                                    "session_id": str(ctx.session) if hasattr(ctx, 'session') else None
-                                }
+                                    "session_id": (
+                                        str(ctx.session)
+                                        if hasattr(ctx, "session")
+                                        else None
+                                    ),
+                                },
                             )
                             ctx.logger.info(
-                                f"Session started with {sender} with session id: {ctx.session}")
+                                f"Session started with {sender} with session id: {ctx.session}"
+                            )
 
                         elif isinstance(item, TextContent):
                             logger.info(
                                 "Processing text query",
                                 extra={
                                     "sender": sender,
-                                    "session_id": str(ctx.session) if hasattr(ctx, 'session') else None,
+                                    "session_id": (
+                                        str(ctx.session)
+                                        if hasattr(ctx, "session")
+                                        else None
+                                    ),
                                     "text_length": len(item.text),
-                                    "text_preview": item.text[:100] + "..." if len(item.text) > 100 else item.text
-                                }
+                                    "text_preview": (
+                                        item.text[:100] + "..."
+                                        if len(item.text) > 100
+                                        else item.text
+                                    ),
+                                },
                             )
-                            ctx.logger.info(
-                                f"Text message from {sender}: {item.text}")
+                            ctx.logger.info(f"Text message from {sender}: {item.text}")
 
                             # Process the query through the agent pipeline
                             async for response in self._process_query_stream(
                                 session_id=str(ctx.session),
                                 user_id=sender,
-                                query=item.text
+                                query=item.text,
                             ):
                                 await self._send_chat_message(response, ctx, sender)
 
@@ -2900,8 +2967,12 @@ class ComposioService:
                                 "Session ended",
                                 extra={
                                     "sender": sender,
-                                    "session_id": str(ctx.session) if hasattr(ctx, 'session') else None
-                                }
+                                    "session_id": (
+                                        str(ctx.session)
+                                        if hasattr(ctx, "session")
+                                        else None
+                                    ),
+                                },
                             )
                             ctx.logger.info(f"Session ended with {sender}")
 
@@ -2910,25 +2981,41 @@ class ComposioService:
                                 "Metadata received",
                                 extra={
                                     "sender": sender,
-                                    "session_id": str(ctx.session) if hasattr(ctx, 'session') else None,
-                                    "metadata_keys": list(item.metadata.keys()) if hasattr(item, 'metadata') and item.metadata else []
-                                }
+                                    "session_id": (
+                                        str(ctx.session)
+                                        if hasattr(ctx, "session")
+                                        else None
+                                    ),
+                                    "metadata_keys": (
+                                        list(item.metadata.keys())
+                                        if hasattr(item, "metadata") and item.metadata
+                                        else []
+                                    ),
+                                },
                             )
-                            ctx.logger.info(
-                                f"Metadata from {sender}: {item.metadata}")
+                            ctx.logger.info(f"Metadata from {sender}: {item.metadata}")
 
                         else:
                             logger.warning(
                                 "Unexpected content type received",
                                 extra={
                                     "sender": sender,
-                                    "session_id": str(ctx.session) if hasattr(ctx, 'session') else None,
+                                    "session_id": (
+                                        str(ctx.session)
+                                        if hasattr(ctx, "session")
+                                        else None
+                                    ),
                                     "content_type": type(item).__name__,
-                                    "content_repr": str(item)[:200] + "..." if len(str(item)) > 200 else str(item)
-                                }
+                                    "content_repr": (
+                                        str(item)[:200] + "..."
+                                        if len(str(item)) > 200
+                                        else str(item)
+                                    ),
+                                },
                             )
                             ctx.logger.info(
-                                f"Received unexpected content type from {sender}: {type(item)} - {item}")
+                                f"Received unexpected content type from {sender}: {type(item)} - {item}"
+                            )
 
                     except Exception as content_error:
                         logger.error(
@@ -2938,9 +3025,9 @@ class ComposioService:
                                 "item_index": i,
                                 "item_type": type(item).__name__,
                                 "error": str(content_error),
-                                "error_type": type(content_error).__name__
+                                "error_type": type(content_error).__name__,
                             },
-                            exc_info=True
+                            exc_info=True,
                         )
                         # Continue processing other content items
                         continue
@@ -2950,18 +3037,20 @@ class ComposioService:
                     "Error handling chat message",
                     extra={
                         "sender": sender,
-                        "message_id": str(msg.msg_id) if hasattr(msg, 'msg_id') else None,
+                        "message_id": (
+                            str(msg.msg_id) if hasattr(msg, "msg_id") else None
+                        ),
                         "error": str(e),
-                        "error_type": type(e).__name__
+                        "error_type": type(e).__name__,
                     },
-                    exc_info=True
+                    exc_info=True,
                 )
                 # Send error message to user
                 try:
                     await self._send_chat_message(
                         "Sorry, an error occurred while processing your message. Please try again.",
                         ctx,
-                        sender
+                        sender,
                     )
                 except Exception as send_error:
                     logger.error(
@@ -2969,9 +3058,9 @@ class ComposioService:
                         extra={
                             "sender": sender,
                             "original_error": str(e),
-                            "send_error": str(send_error)
+                            "send_error": str(send_error),
                         },
-                        exc_info=True
+                        exc_info=True,
                     )
 
         return self._protocol
@@ -2987,7 +3076,7 @@ class ComposioService:
             "status": "healthy",
             "timestamp": datetime.now(UTC).isoformat(),
             "components": {},
-            "version": "1.0.0"
+            "version": "1.0.0",
         }
 
         try:
@@ -2995,15 +3084,15 @@ class ComposioService:
             components = health_status["components"]
             components["llm"] = {
                 "status": "healthy" if self._llm else "unhealthy",
-                "model": getattr(self._llm, 'model_name', 'unknown'),
-                "base_url": getattr(self._llm, 'base_url', 'unknown')
+                "model": getattr(self._llm, "model_name", "unknown"),
+                "base_url": getattr(self._llm, "base_url", "unknown"),
             }
 
             # Check Composio client
             components["composio"] = {
                 "status": "healthy" if self._client else "unhealthy",
                 "auth_configs": len(self._composio_config.get_auth_config_ids()),
-                "tool_configs": len(self._composio_config.tool_configs or [])
+                "tool_configs": len(self._composio_config.tool_configs or []),
             }
             # Check database connection if configured
             if self._memory_config:
@@ -3011,23 +3100,20 @@ class ComposioService:
                     if self._pool:
                         components["database"] = {
                             "status": "healthy",
-                            "pool_size": getattr(self._pool, 'max_size', 'unknown'),
-                            "setup_completed": self._setup_completed
+                            "pool_size": getattr(self._pool, "max_size", "unknown"),
+                            "setup_completed": self._setup_completed,
                         }
                     else:
                         components["database"] = {
                             "status": "not_initialized",
-                            "message": "Database pool not yet initialized"
+                            "message": "Database pool not yet initialized",
                         }
                 except Exception as e:
-                    components["database"] = {
-                        "status": "unhealthy",
-                        "error": str(e)
-                    }
+                    components["database"] = {"status": "unhealthy", "error": str(e)}
             else:
                 components["database"] = {
                     "status": "not_configured",
-                    "message": "Database memory not configured"
+                    "message": "Database memory not configured",
                 }
 
             # Check protocol
@@ -3036,25 +3122,25 @@ class ComposioService:
             }
 
             # Overall status
-            component_statuses = [comp.get("status")
-                                  for comp in components.values()]
+            component_statuses = [comp.get("status") for comp in components.values()]
             component_statuses = [
-                comp.get("status") for comp in health_status["components"].values()]
+                comp.get("status") for comp in health_status["components"].values()
+            ]
             if any(status == "unhealthy" for status in component_statuses):
                 health_status["status"] = "unhealthy"
-            elif any(status in ["not_initialized", "not_configured"] for status in component_statuses):
+            elif any(
+                status in ["not_initialized", "not_configured"]
+                for status in component_statuses
+            ):
                 health_status["status"] = "degraded"
 
         except Exception as e:
             logger.error(
                 "Health check failed",
                 extra={"error": str(e), "error_type": type(e).__name__},
-                exc_info=True
+                exc_info=True,
             )
-            health_status.update({
-                "status": "unhealthy",
-                "error": str(e)
-            })
+            health_status.update({"status": "unhealthy", "error": str(e)})
 
         return health_status
 
@@ -3084,7 +3170,7 @@ class ComposioService:
             logger.error(
                 "Error during service cleanup",
                 extra={"error": str(e), "error_type": type(e).__name__},
-                exc_info=True
+                exc_info=True,
             )
             raise
 
@@ -3098,12 +3184,12 @@ class ComposioService:
         return {
             "service_type": "ComposioService",
             "version": "1.0.0",
-            "llm_model": getattr(self._llm, 'model_name', 'unknown'),
+            "llm_model": getattr(self._llm, "model_name", "unknown"),
             "auth_configs_count": len(self._composio_config.get_auth_config_ids()),
             "tool_configs_count": len(self._composio_config.tool_configs or []),
             "memory_enabled": self._memory_config is not None,
             "setup_completed": self._setup_completed,
-            "pool_initialized": self._pool is not None
+            "pool_initialized": self._pool is not None,
         }
 
     async def __aenter__(self) -> ComposioService:
@@ -3120,7 +3206,7 @@ class ComposioService:
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: Any | None
+        exc_tb: Any | None,
     ) -> None:
         """
         Async context manager exit with automatic cleanup.
@@ -3134,8 +3220,8 @@ class ComposioService:
             "Exiting ComposioService async context manager",
             extra={
                 "has_exception": exc_type is not None,
-                "exception_type": exc_type.__name__ if exc_type else None
-            }
+                "exception_type": exc_type.__name__ if exc_type else None,
+            },
         )
         await self.cleanup()
 
@@ -3163,20 +3249,17 @@ __all__ = [
     "ToolConfig",
     "Modifiers",
     "PostgresMemoryConfig",
-
     # Exceptions
     "ComposioError",
     "AuthenticationError",
     "ConnectionError",
     "ConfigurationError",
     "ToolRetrievalError",
-
     # Type aliases for external use
     "UserId",
     "AuthConfigId",
     "ToolSlug",
     "SessionId",
-
     # Modifier function types
     "SchemaModifierFunc",
     "schema_modifier",
@@ -3184,7 +3267,6 @@ __all__ = [
     "before_execute",
     "AfterExecuteModifierFunc",
     "after_execute",
-
     # Version and metadata
     "__version__",
     "__author__",

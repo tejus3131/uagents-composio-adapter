@@ -14,7 +14,7 @@ A production-ready **Composio integration module** for **uAgents framework** wit
 - **🚨 Robust Error Handling**: Custom exceptions with detailed error context and structured logging
 - **🔐 Authentication Management**: Complete OAuth flow handling with automatic retry logic
 - **🛠️ Flexible Tool Configuration**: Support for specific tools, toolkit-based, scoped, and search-based tool retrieval
-- **💾 Memory Persistence**: PostgreSQL-based conversation memory with automatic schema management  
+- **💾 Memory Persistence**: PostgreSQL-based conversation memory with automatic schema management
 - **🧵 Thread-Safe Operations**: Proper resource management and connection pooling
 - **📊 Health Monitoring**: Built-in health checks and service monitoring capabilities
 - **🎛️ Tool Modifiers**: Comprehensive support for schema, before-execute, and after-execute modifiers
@@ -58,13 +58,13 @@ async def main():
         toolkit="GITHUB",
         limit=5
     )
-    
+
     # Create Composio configuration
     composio_config = ComposioConfig.from_env(tool_configs=[tool_config])
-    
+
     # Initialize agent
     agent = Agent(name="My Composio Agent", seed="my_seed", port=8001, mailbox=True)
-    
+
     # Create and configure Composio service
     async with ComposioService(composio_config=composio_config) as service:
         agent.include(service.protocol, publish_manifest=True)
@@ -117,7 +117,7 @@ github_tools = ToolConfig.from_tools(
 # 2. All tools from a toolkit with limit
 slack_tools = ToolConfig.from_toolkits(
     tool_group_name="Slack Communication",
-    auth_config_id="auth_456", 
+    auth_config_id="auth_456",
     toolkit="SLACK",
     limit=10
 )
@@ -214,7 +214,7 @@ import asyncio
 import logging
 from uagents import Agent
 from uagents_composio_adapter import (
-    ComposioConfig, ToolConfig, ComposioService, 
+    ComposioConfig, ToolConfig, ComposioService,
     PostgresMemoryConfig
 )
 
@@ -231,7 +231,7 @@ async def main():
             tools=["GITHUB_CREATE_AN_ISSUE", "GITHUB_LIST_ISSUES"]
         ),
         ToolConfig.from_toolkits(
-            tool_group_name="Slack Communication", 
+            tool_group_name="Slack Communication",
             auth_config_id=os.getenv("SLACK_AUTH_ID"),
             toolkit="SLACK",
             limit=5
@@ -243,11 +243,11 @@ async def main():
             limit=3
         )
     ]
-    
+
     # Create configurations
     composio_config = ComposioConfig.from_env(tool_configs=tool_configs)
     memory_config = PostgresMemoryConfig.from_env()
-    
+
     # Initialize agent
     agent = Agent(
         name="Production Composio Agent",
@@ -256,7 +256,7 @@ async def main():
         mailbox=True,
         publish_agent_details=True
     )
-    
+
     # Run with proper resource management
     async with ComposioService(
         composio_config=composio_config,
@@ -267,10 +267,10 @@ async def main():
         if health['status'] != 'healthy':
             logger.error(f"Service unhealthy: {health}")
             return
-            
+
         # Integrate with agent
         agent.include(service.protocol, publish_manifest=True)
-        
+
         logger.info("🚀 Production agent started successfully!")
         agent.run_async()
 
@@ -368,10 +368,10 @@ class ComposioService:
         base_url: str | None = None,
         memory_config: PostgresMemoryConfig | None = None,
     ) -> None: ...
-    
+
     @property
     def protocol(self) -> Protocol: ...
-    
+
     async def health_check(self) -> dict[str, Any]: ...
     async def cleanup(self) -> None: ...
 ```
@@ -383,10 +383,10 @@ Configuration for tool retrieval with multiple patterns.
 class ToolConfig:
     @classmethod
     def from_tools(cls, tool_group_name: str, auth_config_id: str, tools: list[str]) -> "ToolConfig": ...
-    
-    @classmethod  
+
+    @classmethod
     def from_toolkits(cls, tool_group_name: str, auth_config_id: str, toolkit: str, limit: int | None = None) -> "ToolConfig": ...
-    
+
     @classmethod
     def from_search(cls, tool_group_name: str, auth_config_id: str, search: str, toolkit: str | None = None, limit: int | None = None) -> "ToolConfig": ...
 ```
@@ -398,10 +398,10 @@ Tool modifier management for customization.
 class Modifiers:
     @classmethod
     def with_schema(cls, *modifiers: SchemaModifierFunc) -> "Modifiers": ...
-    
-    @classmethod  
+
+    @classmethod
     def with_before_execute(cls, *modifiers: BeforeExecuteModifierFunc) -> "Modifiers": ...
-    
+
     @classmethod
     def combine(cls, schema_functions: list | None = None, before_execute_functions: list | None = None, after_execute_functions: list | None = None) -> "Modifiers": ...
 ```
@@ -428,7 +428,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - [Composio](https://composio.dev/) for the excellent tool integration platform
-- [uAgents](https://github.com/fetchai/uAgents) for the robust agent framework  
+- [uAgents](https://github.com/fetchai/uAgents) for the robust agent framework
 - [LangChain](https://langchain.com/) for the powerful LLM integration tools
 - The open-source community for continuous inspiration and support
 

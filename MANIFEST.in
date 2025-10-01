@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include pyproject.toml
 recursive-include uagents_composio_adapter *.py
+include uagents_composio_adapter/py.typed
 recursive-exclude uagents_composio_adapter *.pyc
 recursive-exclude uagents_composio_adapter __pycache__
 global-exclude *.pyc

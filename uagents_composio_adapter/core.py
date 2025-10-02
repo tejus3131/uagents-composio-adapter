@@ -1,34 +1,58 @@
 """
-Production-ready Composio integration module for LangChain-based AI agents.
+Production-ready Composio integration module for LangChain-based AI agents with multi-agent orchestrator.
 
 This module provides a comprehensive, async-first integration layer for building
-AI agents that can authenticate users, manage tool access, and execute actions
-through the Composio platform. It includes robust error handling, structured
-logging, connection management, and memory persistence capabilities.
+intelligent multi-agent systems that can authenticate users, manage tool access, and
+execute actions through the Composio platform. It features an advanced orchestrator
+architecture that automatically routes requests to specialized tool agents based on
+their capabilities and includes robust error handling, structured logging, connection
+management, and memory persistence capabilities.
 
 Key Features:
-    - Async/await support throughout
-    - Type-safe configuration management
-    - Comprehensive error handling with custom exceptions
-    - Structured logging with contextual information
-    - Connection status management and authentication flows
-    - Tool retrieval with filtering and modification capabilities
-    - PostgreSQL-based memory persistence
-    - Thread-safe operations with proper resource management
+    - Multi-agent orchestrator system with intelligent request routing
+    - Specialized agents for different tool groups and capabilities
+    - Persona customization for orchestrator behavior guidance
+    - Async/await support throughout the entire system
+    - Type-safe configuration management with comprehensive validation
+    - Robust error handling with custom exceptions and detailed context
+    - Structured logging with contextual information and performance metrics
+    - Complete OAuth authentication flows with automatic retry logic
+    - Advanced tool retrieval with filtering, modification, and optimization
+    - PostgreSQL-based conversation memory with automatic schema management
+    - Thread-safe operations with proper resource management and connection pooling
+
+Architecture:
+    The system implements a hierarchical multi-agent architecture:
+
+    1. **Orchestrator Agent**: Main decision-making agent that analyzes user requests
+       and routes them to the most appropriate specialized agent
+
+    2. **Specialized Agents**: Domain-specific agents (e.g., GitHub Agent, Email Agent)
+       that handle specific tool categories with optimized prompts and capabilities
+
+    3. **Tool Management**: Intelligent grouping and organization of Composio tools
+       into logical categories for efficient agent specialization
 
 Usage:
     ```python
     import asyncio
-    from composio_integration import ComposioService, ComposioConfig, ToolConfig
+    from uagents_composio_adapter import ComposioService, ComposioConfig, ToolConfig
 
     async def main():
-        # Configure the service
+        # Configure multiple tool groups for specialized agents
+        tool_configs = [
+            ToolConfig.from_toolkits("GitHub Tools", "auth_123", "GITHUB", limit=5),
+            ToolConfig.from_toolkits("Email Tools", "auth_456", "GMAIL", limit=3),
+            ToolConfig.from_toolkits("Calendar Tools", "auth_789", "GOOGLECALENDAR", limit=4)
+        ]
+
+        # Create configuration with persona customization
         config = ComposioConfig.from_env(
-            tool_configs=[
-                ToolConfig.from_toolkits("GitHub Tools", "auth_123", "GITHUB", limit=5)
-            ]
+            tool_configs=tool_configs,
+            persona_prompt="You are a productivity-focused AI assistant..."
         )
 
+        # Initialize the multi-agent orchestrator service
         service = ComposioService(composio_config=config)
 
         # Use the service protocol for agent communication
@@ -38,8 +62,8 @@ Usage:
     asyncio.run(main())
     ```
 
-Author: Composio Integration Team
-Version: 1.0.0
+Author: Tejus Gupta <tejus3131@gmail.com>
+Version: 1.0.2
 License: MIT
 """
 
@@ -85,16 +109,17 @@ except ImportError as e:
 
 try:
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from langgraph.graph.state import CompiledStateGraph
-    from langgraph.prebuilt import create_react_agent
 except ImportError as e:
     raise ImportError(
         "langgraph package is required. Install with: pip install langgraph langgraph-checkpoint-postgres"
     ) from e
 
 try:
+    from langchain.agents import ToolNode, create_agent
+    from langchain.tools import tool
     from langchain_core.messages import BaseMessage, HumanMessage
     from langchain_core.messages.utils import count_tokens_approximately, trim_messages
+    from langchain_core.tools.structured import StructuredTool
 except ImportError as e:
     raise ImportError(
         "langchain-core and langchain packages are required. Install with: pip install langchain langchain-core"
@@ -756,6 +781,9 @@ class ComposioConfig(BaseModel):
     api_key: str
     """Composio API key for authentication. Get from https://app.composio.dev/settings. Required for all API operations."""
 
+    persona_prompt: str | None = None
+    """Optional persona prompt to guide orchestrator agent behavior."""
+
     timeout: int = DEFAULT_TIMEOUT
     """Timeout for authentication in seconds."""
 
@@ -791,6 +819,7 @@ class ComposioConfig(BaseModel):
         cls,
         *,
         tool_configs: list[ToolConfig] | None = None,
+        persona_prompt: str | None = None,
     ) -> ComposioConfig:
         """
         Create configuration from environment variables.
@@ -847,6 +876,7 @@ class ComposioConfig(BaseModel):
             api_key=api_key,
             tool_configs=tool_configs,
             timeout=timeout,
+            persona_prompt=persona_prompt,
         )
 
     def get_auth_config_ids(self) -> set[AuthConfigId]:
@@ -1033,6 +1063,7 @@ class ComposioError(Exception):
         self.operation = operation
 
     def __str__(self) -> str:
+        """Return a formatted string representation of the error."""
         base = self.message
         if self.operation:
             base = f"{self.operation}: {base}"
@@ -1359,7 +1390,7 @@ class ComposioClient:
                     link_params["callback_url"] = callback_url
 
                 connection_request = await asyncio.to_thread(
-                    self._composio.connected_accounts.link, **link_params
+                    self._composio.connected_accounts.initiate, **link_params
                 )
 
             if not connection_request.redirect_url:
@@ -1538,13 +1569,13 @@ class ComposioClient:
                 message=f"Authentication verification failed: {str(e)}",
             )
 
-    async def get_tools(self, user_id: UserId) -> list[Any]:
+    async def get_tools(self, user_id: UserId) -> dict[str, list[Any]]:
         """
         Retrieve tools for a user based on configured tool specifications.
 
         This method fetches tools according to all ToolConfig instances provided
-        during client initialization. It handles multiple tool configurations and
-        combines results into a single list.
+        during client initialization. It returns a dictionary mapping tool group names
+        to their respective tools.
 
         The tools are automatically formatted for the configured provider
         (LangchainProvider by default) and include any applied modifiers.
@@ -1553,7 +1584,7 @@ class ComposioClient:
             user_id: Unique identifier for the user to retrieve tools for
 
         Returns:
-            List of tools formatted for the configured provider
+            Dictionary mapping tool group names to lists of tools formatted for the configured provider
 
         Raises:
             ValueError: If user_id is empty or invalid
@@ -1562,16 +1593,14 @@ class ComposioClient:
 
         Example:
             ```python
-            tools = await client.get_tools("user_123")
+            tools_by_group = await client.get_tools("user_123")
 
-            print(f"Retrieved {len(tools)} tools")
+            for group_name, tools in tools_by_group.items():
+                print(f"Group '{group_name}': {len(tools)} tools")
 
-            # Tools are ready to use with your LLM provider
-            response = openai_client.chat.completions.create(
-                model="gpt-4",
-                tools=tools,
-                messages=[{"role": "user", "content": "Create a GitHub issue"}]
-            )
+            # Access specific tool groups
+            github_tools = tools_by_group.get("GitHub Tools", [])
+            slack_tools = tools_by_group.get("Slack Tools", [])
             ```
         """
         if not user_id or not user_id.strip():
@@ -1591,7 +1620,7 @@ class ComposioClient:
         )
 
         try:
-            all_tools: list[Any] = []
+            tools_by_group: dict[str, list[Any]] = {}
             config_results: list[dict[str, Any]] = []
 
             for i, config in enumerate(self._config.tool_configs):
@@ -1601,6 +1630,7 @@ class ComposioClient:
                         "user_id": user_id,
                         "auth_config_id": config.auth_config_id,
                         "config_type": self._get_config_type(config),
+                        "tool_group_name": config.tool_group_name,
                     },
                 )
 
@@ -1644,11 +1674,17 @@ class ComposioClient:
                         retrieved_tools = await asyncio.to_thread(get_tools_for_config)
                         tool_count = len(retrieved_tools) if retrieved_tools else 0
 
-                        all_tools.extend(retrieved_tools or [])
+                        # Add tools to the group
+                        group_name = config.tool_group_name
+                        if group_name not in tools_by_group:
+                            tools_by_group[group_name] = []
+                        tools_by_group[group_name].extend(retrieved_tools or [])
+
                         config_results.append(
                             {
                                 "auth_config_id": config.auth_config_id,
                                 "config_type": self._get_config_type(config),
+                                "tool_group_name": group_name,
                                 "tool_count": tool_count,
                                 "success": True,
                             }
@@ -1659,6 +1695,7 @@ class ComposioClient:
                             extra={
                                 "user_id": user_id,
                                 "auth_config_id": config.auth_config_id,
+                                "tool_group_name": group_name,
                                 "tool_count": tool_count,
                             },
                         )
@@ -1670,6 +1707,7 @@ class ComposioClient:
                                 "user_id": user_id,
                                 "auth_config_id": config.auth_config_id,
                                 "config_type": self._get_config_type(config),
+                                "tool_group_name": config.tool_group_name,
                                 "error": str(config_error),
                             },
                             exc_info=True,
@@ -1678,21 +1716,12 @@ class ComposioClient:
                             {
                                 "auth_config_id": config.auth_config_id,
                                 "config_type": self._get_config_type(config),
+                                "tool_group_name": config.tool_group_name,
                                 "tool_count": 0,
                                 "success": False,
                                 "error": str(config_error),
                             }
                         )
-
-            # Remove duplicates while preserving order
-            unique_tools: list[Any] = []
-            seen_tool_names: set[str] = set()
-
-            for tool in all_tools:
-                tool_name: str = getattr(tool, "name", getattr(tool, "slug", str(tool)))
-                if tool_name not in seen_tool_names:
-                    unique_tools.append(tool)
-                    seen_tool_names.add(tool_name)
 
             successful_configs = sum(
                 1 for result in config_results if result["success"]
@@ -1706,14 +1735,16 @@ class ComposioClient:
                 extra={
                     "user_id": user_id,
                     "total_tools_retrieved": total_retrieved,
-                    "unique_tools": len(unique_tools),
+                    "tools_by_group": {
+                        group: len(tools) for group, tools in tools_by_group.items()
+                    },
                     "successful_configs": successful_configs,
                     "total_configs": len(self._config.tool_configs),
                     "config_results": config_results,
                 },
             )
 
-            if not unique_tools:
+            if not tools_by_group:
                 logger.warning(
                     "No tools retrieved from any configuration",
                     extra={
@@ -1722,7 +1753,7 @@ class ComposioClient:
                     },
                 )
 
-            return unique_tools
+            return tools_by_group
 
         except Exception as e:
             logger.error(
@@ -2483,7 +2514,10 @@ class ComposioService:
         strategy: str = "last",
     ) -> Callable[[dict[str, Any]], dict[str, list[BaseMessage]]]:
         """
-        Factory function to create a pre_model_hook with custom configuration.
+        Factory function to create a pre_model_hook with custom configuration for memory trimming.
+
+        This hook implements the 'Trim messages' pattern to keep the conversation history
+        within the specified token limit, ensuring the most recent context is prioritized.
 
         Args:
             max_tokens: Maximum number of tokens to keep in history.
@@ -2494,6 +2528,11 @@ class ComposioService:
         """
 
         def pre_model_hook(state: dict[str, Any]) -> dict[str, list[BaseMessage]]:
+            """The actual hook to be executed before the LLM call."""
+
+            if "messages" not in state or not isinstance(state["messages"], list):
+                return {}
+
             trimmed_messages: list[BaseMessage] = trim_messages(
                 state["messages"],
                 strategy=strategy,
@@ -2502,101 +2541,25 @@ class ComposioService:
                 start_on="human",
                 end_on=("human", "tool"),
             )
+
             return {"llm_input_messages": trimmed_messages}
 
         return pre_model_hook
-
-    async def _create_agent(
-        self,
-        tools: list[Any],
-        memory: AsyncPostgresSaver | None = None,
-        max_history_tokens: int = 100000,
-    ) -> CompiledStateGraph[Any, Any, Any, Any]:
-        """
-        Create a LangChain ReAct agent with the provided tools and optional memory.
-
-        This method constructs a LangChain agent using the ReAct (Reasoning and Acting)
-        pattern, which allows the agent to reason about problems and take actions using
-        the provided tools.
-
-        Args:
-            tools: List of Composio tools to provide to the agent
-            memory: Optional PostgreSQL-based memory checkpoint for conversation persistence
-
-        Returns:
-            Configured LangChain agent ready for query processing
-
-        Raises:
-            Exception: If agent creation fails (logged and re-raised)
-        """
-        logger.info(
-            "Creating LangChain agent",
-            extra={
-                "tools_count": len(tools),
-                "has_memory": memory is not None,
-                "model": getattr(self._llm, "model_name", "unknown"),
-            },
-        )
-
-        try:
-            config: dict[str, Any] = {
-                "model": self._llm,
-                "tools": tools,
-                "pre_model_hook": await self._create_pre_model_hook(
-                    max_tokens=max_history_tokens, strategy="last"
-                ),
-            }
-
-            if memory:
-                config["checkpointer"] = memory
-                logger.debug("Agent configured with memory checkpointer")
-
-            agent = create_react_agent(
-                **{k: v for k, v in config.items() if v is not None}
-            )
-
-            logger.info(
-                "LangChain agent created successfully",
-                extra={
-                    "agent_type": "ReAct",
-                    "tools_configured": len(tools),
-                    "memory_enabled": memory is not None,
-                },
-            )
-
-            return agent
-
-        except Exception as e:
-            logger.error(
-                "Failed to create LangChain agent",
-                extra={
-                    "tools_count": len(tools),
-                    "has_memory": memory is not None,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                },
-                exc_info=True,
-            )
-            raise
 
     async def _run_agent_query(self, agent: Any, query: str, session_id: str) -> str:
         """
         Execute a query against the LangChain agent and return the response.
 
         This method processes user queries through the agent's reasoning and action
-        loop, allowing it to use tools as needed to fulfill the request.
+        loop, using asynchronous streaming for efficient execution.
 
         Args:
-            agent: The configured LangChain agent instance
-            query: User's natural language query
-            session_id: Unique session identifier for memory context
+            agent: The configured LangChain agent instance (CompiledStateGraph).
+            query: User's natural language query.
+            session_id: Unique session identifier for memory context.
 
         Returns:
-            str: Agent's response to the query, or error message if processing fails
-
-        Note:
-            The agent processes queries asynchronously and may use multiple tools
-            and reasoning steps before providing a final response.
+            str: Agent's final response to the query, or error message if processing fails.
         """
         logger.info(
             "Running agent query",
@@ -2608,52 +2571,27 @@ class ComposioService:
         )
 
         try:
-            response_content = ""
-            chunk_count = 0
-            tool_calls_count = 0
+            input_messages = {"messages": [HumanMessage(content=query)]}
+            config = {"configurable": {"thread_id": session_id}}
 
-            content = f"Fulfill the following user request: {query} \n by using the most appropriate tool from your available tools."
+            # Use ainvoke for a single, final result
+            final_state = await agent.ainvoke(
+                input_messages,
+                config,
+            )
 
-            # Stream the agent's response processing
-            async for chunk in agent.astream(
-                {"messages": [HumanMessage(content=content)]},
-                {"configurable": {"thread_id": session_id}},
-            ):
-                chunk_count += 1
-                logger.debug(
-                    "Processing agent stream chunk",
-                    extra={
-                        "session_id": session_id,
-                        "chunk_number": chunk_count,
-                    },
-                )
-
-                if "agent" in chunk:
-                    for message in chunk["agent"]["messages"]:
-                        if hasattr(message, "content") and message.content:
-                            response_content = message.content
-                            logger.debug(
-                                "Extracted response content from agent message",
-                                extra={
-                                    "session_id": session_id,
-                                    "content_length": len(response_content),
-                                },
-                            )
-
-                # Count tool calls for logging
-                if "tools" in chunk:
-                    tool_calls_count += len(chunk.get("tools", []))
-
+            # The final answer is typically the content of the last message in the state
+            final_message = final_state.get("messages", [])[-1]
+            response_content = getattr(final_message, "content", None)
             final_response = (
-                response_content or "I couldn't generate a response to your query."
+                response_content
+                or "I couldn't generate a final text response to your query."
             )
 
             logger.info(
                 "Agent query completed",
                 extra={
                     "session_id": session_id,
-                    "chunks_processed": chunk_count,
-                    "tool_calls": tool_calls_count,
                     "response_length": len(final_response),
                     "has_response": bool(response_content),
                 },
@@ -2673,6 +2611,323 @@ class ComposioService:
                 exc_info=True,
             )
             return f"An error occurred while processing your query: {str(e)}"
+
+    async def _structured_tool_to_dict(self, tool: StructuredTool) -> dict[str, Any]:
+        """
+        Converts a StructuredTool object to the dictionary format expected by
+        _create_agent_tool_prompt and _create_orchestrator_prompt methods.
+
+                Args:
+            tool: A StructuredTool instance from LangChain
+
+        Returns:
+            A dictionary with 'function' key containing name, description, and parameters
+        """
+        # Get the JSON schema from the tool's args_schema
+        if tool.args_schema is None:
+            schema = {}
+        elif hasattr(tool.args_schema, "model_json_schema"):
+            # If it's a Pydantic model class, get the schema
+            schema = tool.args_schema.model_json_schema()
+        elif hasattr(tool.args_schema, "model_dump"):
+            # If it's a Pydantic model instance, dump it
+            schema = tool.args_schema.model_dump()
+        else:
+            # If args_schema is already a dict, use it directly
+            schema = tool.args_schema if isinstance(tool.args_schema, dict) else {}
+
+        # Extract properties and required fields
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        defs = schema.get("$defs", {})
+
+        return {
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": {
+                    "properties": properties,
+                    "required": required,
+                    "$defs": defs,
+                },
+            }
+        }
+
+    async def _create_agent_tool_prompt(
+        self, tool_list: list[StructuredTool], agent_name: str
+    ) -> str:
+        """
+        Generates a prompt for an LLM agent, detailing all its available tools,
+        their descriptions, parameters, and required inputs.
+
+        Args:
+            tool_list: A list of tool definition dictionaries.
+            agent_name: The name of the agent (e.g., 'LinkedIn Agent', 'Gmail Agent').
+
+        Returns:
+            A formatted string prompt for the LLM.
+        """
+        tools_prompt = f"## {agent_name} Agent Tool Definitions\n"
+        tools_prompt += f"You are the **{agent_name} Agent**. Your task is to process user requests by invoking the following tools. For each tool call, you **must** use the function name and provide the correct parameters.\n\n"
+        tools_prompt += "---"
+
+        for tool_def in tool_list:
+            tool_dict = await self._structured_tool_to_dict(tool_def)
+            function_data = tool_dict.get("function", {})
+            name = function_data.get("name", "N/A")
+            description = function_data.get("description", "No description provided.")
+            parameters = function_data.get("parameters", {})
+            required_params = parameters.get("required", [])
+            properties = parameters.get("properties", {})
+
+            tools_prompt += f"\n\n### Tool: **{name}**\n"
+            tools_prompt += f"**Description:** {description}\n"
+            tools_prompt += "**Parameters:**\n"
+
+            if not properties:
+                tools_prompt += "- *None*\n"
+                continue
+
+            for prop_name, prop_data in properties.items():
+                param_type = prop_data.get("type", "string")
+                param_desc = prop_data.get("description", "No description.")
+                is_required = (
+                    "[REQUIRED]" if prop_name in required_params else "[OPTIONAL]"
+                )
+
+                tools_prompt += (
+                    f"- **{prop_name}** ({param_type}, {is_required}): {param_desc}"
+                )
+
+                # Check for nested properties (common for 'object' types like 'distribution')
+                if param_type == "object" and "properties" in prop_data:
+                    tools_prompt += "\n  - **Nested Properties:** " + ", ".join(
+                        prop_data["properties"].keys()
+                    )
+
+                # Check for allowed values (enums)
+                if "enum" in prop_data:
+                    allowed_values = ", ".join([f"`{v}`" for v in prop_data["enum"]])
+                    tools_prompt += f" **Allowed Values:** {allowed_values}"
+
+                tools_prompt += "\n"
+
+        tools_prompt += "\n---\n**Rule:** Only generate a single function call per turn based on the provided tools. If any error occurs during tool execution, respond with a clear error message and do not attempt to call another tool."
+        return tools_prompt
+
+    async def _create_orchestrator_prompt(
+        self,
+        agent_tools_map: dict[str, list[StructuredTool]],
+    ) -> str:
+        """
+        Generates a high-level prompt for an Orchestrator LLM, explaining which
+        agents are available and the primary functions they manage.
+
+        Args:
+            agent_tools_map: A dictionary mapping agent names to their list of tools.
+
+        Returns:
+            A formatted string prompt for the Orchestrator LLM.
+        """
+        orchestrator_prompt = "## Orchestrator Agent: Available Tool Agents\n"
+        orchestrator_prompt += "You are the **Orchestrator Agent**. Your primary role is to determine which specialized agent can best handle the user's request.\n\n"
+        orchestrator_prompt += (
+            "**You can invoke any of the following specialized agents:**\n"
+        )
+        orchestrator_prompt += "---\n"
+
+        for agent_name, tool_list in agent_tools_map.items():
+            tool_summaries = []
+            for tool_def in tool_list:
+                tool_dict = await self._structured_tool_to_dict(tool_def)
+                name = tool_dict.get("function", {}).get("name", "N/A")
+                description = tool_dict.get("function", {}).get("description", "")
+
+                snippet = description.split(";")[0].split(",")[0]
+                snippet = snippet.split(".")[0] + "..."
+
+                tool_summaries.append(f"`{name}`: {snippet}")
+
+            orchestrator_prompt += f"### Agent: **{agent_name}**\n"
+            orchestrator_prompt += (
+                f"This agent is responsible for tasks related to **{agent_name}**.\n"
+            )
+            orchestrator_prompt += (
+                "**Key Capabilities:** " + ", ".join(tool_summaries) + "\n\n"
+            )
+
+        orchestrator_prompt += "**Rules:** To invoke an agent, You must provide the full context of user need related to that agent, along with any data relevant to the agent's tools.\n\n"
+
+        orchestrator_prompt += "---\n**Instruction:** Read the user's request and respond by invoking *only* the single best-suited agent. Do not attempt to call the individual tools yourself. If no agent is appropriate, respond with a polite message indicating that you cannot assist with the request.\n\n"
+
+        if (
+            self._composio_config.persona_prompt
+            and self._composio_config.persona_prompt.strip()
+        ):
+            orchestrator_prompt += (
+                f"### Your Persona\n{self._composio_config.persona_prompt.strip()}\n\n"
+            )
+            orchestrator_prompt += "Use this persona to guide your decision-making when selecting the appropriate agent to handle the user's request.\n"
+        return orchestrator_prompt
+
+    async def _create_specialized_agent_tool(
+        self,
+        session_id: str,
+        agent_name: str,
+        tools: list[Any],
+        memory: AsyncPostgresSaver | None = None,
+        max_history_tokens: int = 100000,
+    ) -> Any:
+        """
+        Creates a single, specialized LangChain ReAct agent with dedicated tools, memory,
+        and a custom system prompt generated from the tool definitions.
+        """
+        logger.info(
+            f"Creating Specialized Agent: {agent_name}",
+            extra={"tools_count": len(tools), "has_memory": memory is not None},
+        )
+
+        try:
+            specialized_prompt = await self._create_agent_tool_prompt(tools, agent_name)
+
+            pre_model_hook_func = await self._create_pre_model_hook(
+                max_tokens=max_history_tokens, strategy="last"
+            )
+
+            def _handle_tool_errors(error: Exception) -> str:
+                """Handle tool execution errors with logging and user-friendly messages."""
+                logger.error(
+                    f"Error occurred during tool execution in {agent_name}: {error}",
+                    exc_info=True,
+                )
+                return "An error occurred while executing a tool. Please try again."
+
+            tool_node = ToolNode(tools=tools, handle_tool_errors=_handle_tool_errors)
+
+            config: dict[str, Any] = {
+                "model": self._llm,
+                "tools": tool_node,
+                "prompt": specialized_prompt,
+                "pre_model_hook": pre_model_hook_func,
+            }
+
+            specialized_thread_id = (
+                f"{session_id}_{agent_name.lower().replace(' ', '_')}"
+            )
+
+            if memory:
+                config["checkpointer"] = memory
+                logger.debug(f"Agent {agent_name} configured with memory checkpointer")
+
+            agent = create_agent(**{k: v for k, v in config.items() if v is not None})
+
+            @tool(
+                agent_name.lower().replace(" ", "_") + "_agent",
+                description=f"To use any tools from the {agent_name}, call this function with the task description and relevant data.",
+            )
+            async def agent_tool(
+                task_description: str, relevant_data: dict[str, Any]
+            ) -> str:
+                """
+                Execute a task using the specialized agent's tools.
+
+                Args:
+                    task_description: Natural language description of the task to perform
+                    relevant_data: Dictionary containing any relevant context or data for the task
+
+                Returns:
+                    str: The agent's response after executing the task
+                """
+                prompt = f"""
+                Query: {task_description}
+                Relevant Data: {relevant_data}
+
+                Use the relevant tool to fulfill the user's request.
+                """
+
+                return await self._run_agent_query(agent, prompt, specialized_thread_id)
+
+            logger.info(f"Specialized Agent {agent_name} created successfully")
+            return agent_tool
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create Specialized Agent {agent_name}: {e}", exc_info=True
+            )
+            raise
+
+    async def _create_orchestrator_agent(
+        self,
+        session_id: str,
+        agent_tools_map: dict[str, list[Any]],
+        memory: AsyncPostgresSaver | None = None,
+        max_history_tokens: int = 100000,
+    ) -> Any:
+        """
+        Creates a multi-agent system by instantiating specialized agents for each tool group
+        and wrapping them into an Orchestrator Agent for high-level delegation.
+
+        Args:
+            agent_tools_map: A dictionary mapping agent names (e.g., 'Gmail Agent')
+                            to their list of **tool definitions (JSON schema)**.
+            memory: Optional memory checkpoint for conversation persistence.
+            max_history_tokens: Maximum tokens for history trimming in the orchestrator.
+
+        Returns:
+            The final Orchestrator Agent.
+        """
+        logger.info("Starting creation of multi-agent orchestrator system.")
+
+        orchestrator_tools = []
+
+        for agent_name, tool_list in agent_tools_map.items():
+            try:
+                specialized_agent = await self._create_specialized_agent_tool(
+                    agent_name=agent_name,
+                    tools=tool_list,  # Assuming these are the callable tools
+                    memory=memory,
+                    max_history_tokens=max_history_tokens,
+                    session_id=session_id,
+                )
+                orchestrator_tools.append(specialized_agent)
+
+            except Exception as e:
+                logger.warning(
+                    f"Skipping agent {agent_name} due to creation error: {e}"
+                )
+                continue
+
+        if not orchestrator_tools:
+            logger.info(f"{agent_tools_map=}, {orchestrator_tools=}")
+            raise Exception(
+                "No specialized agents could be successfully created to form the orchestrator."
+            )
+
+        # Use the helper function to generate the top-level system prompt
+        orchestrator_system_prompt = await self._create_orchestrator_prompt(
+            agent_tools_map
+        )
+
+        orchestrator_config: dict[str, Any] = {
+            "model": self._llm,
+            "tools": orchestrator_tools,  # The tools are now the specialized agents
+            "prompt": orchestrator_system_prompt,
+            "pre_model_hook": await self._create_pre_model_hook(
+                max_tokens=max_history_tokens, strategy="last"
+            ),
+        }
+
+        if memory:
+            orchestrator_config["checkpointer"] = memory
+
+        orchestrator_agent = create_agent(
+            **{k: v for k, v in orchestrator_config.items() if v is not None}
+        )
+
+        logger.info(
+            "Orchestrator Agent created successfully, managing all specialized agents."
+        )
+        return orchestrator_agent
 
     async def _process_query_stream(
         self,
@@ -2727,13 +2982,17 @@ class ComposioService:
                 "Retrieving tools for user",
                 extra={"session_id": session_id, "user_id": user_id},
             )
-            tools = await self._client.get_tools(user_id)
+            tools_by_group = await self._client.get_tools(user_id)
+
             logger.info(
                 "Tools retrieved successfully",
                 extra={
                     "session_id": session_id,
                     "user_id": user_id,
-                    "tools_count": len(tools),
+                    "tools_by_group": {
+                        group: len(group_tools)
+                        for group, group_tools in tools_by_group.items()
+                    },
                 },
             )
 
@@ -2760,7 +3019,11 @@ class ComposioService:
                         logger.info("Memory schema setup completed")
 
                     # Create agent with memory
-                    agent = await self._create_agent(tools=tools, memory=memory)
+                    agent = await self._create_orchestrator_agent(
+                        session_id=session_id,
+                        agent_tools_map=tools_by_group,
+                        memory=memory,
+                    )
 
                     # Step 4: Process the query
                     logger.debug(
@@ -2780,7 +3043,10 @@ class ComposioService:
                 )
 
                 # Create agent without memory
-                agent = await self._create_agent(tools=tools)
+                agent = await self._create_orchestrator_agent(
+                    session_id=session_id,
+                    agent_tools_map=tools_by_group,
+                )
 
                 # Step 4: Process the query
                 logger.debug(
@@ -3083,7 +3349,7 @@ class ComposioService:
             "status": "healthy",
             "timestamp": datetime.now(UTC).isoformat(),
             "components": {},
-            "version": "1.0.0",
+            "version": "1.0.2",
         }
 
         try:
@@ -3190,7 +3456,7 @@ class ComposioService:
         """
         return {
             "service_type": "ComposioService",
-            "version": "1.0.0",
+            "version": "1.0.2",
             "llm_model": getattr(self._llm, "model_name", "unknown"),
             "auth_configs_count": len(self._composio_config.get_auth_config_ids()),
             "tool_configs_count": len(self._composio_config.tool_configs or []),
@@ -3243,7 +3509,7 @@ class ComposioService:
 
 
 # Version information
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 __author__ = "Tejus Gupta <tejus3131@gmail.com>"
 __license__ = "MIT"
 

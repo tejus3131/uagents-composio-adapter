@@ -1,25 +1,30 @@
 """
 uAgents Composio Adapter
 
-A production-ready Composio integration module for LangChain-based AI agents built on uAgents framework.
+A production-ready Composio integration module for LangChain-based AI agents with multi-agent orchestrator built on uAgents framework.
 
 This module provides a comprehensive, async-first integration layer for building
-AI agents that can authenticate users, manage tool access, and execute actions
-through the Composio platform. It includes robust error handling, structured
-logging, connection management, and memory persistence capabilities.
+intelligent multi-agent systems that can authenticate users, manage tool access, and
+execute actions through the Composio platform. It features an advanced orchestrator
+architecture that automatically routes requests to specialized tool agents based on
+their capabilities and includes robust error handling, structured logging, connection
+management, and memory persistence capabilities.
 
 Key Features:
-    - Async/await support throughout
-    - Type-safe configuration management
-    - Comprehensive error handling with custom exceptions
-    - Structured logging with contextual information
-    - Connection status management and authentication flows
-    - Tool retrieval with filtering and modification capabilities
-    - PostgreSQL-based memory persistence
-    - Thread-safe operations with proper resource management
+    - Multi-agent orchestrator system with intelligent request routing
+    - Specialized agents for different tool groups and capabilities
+    - Persona customization for orchestrator behavior guidance
+    - Async/await support throughout the entire system
+    - Type-safe configuration management with comprehensive validation
+    - Robust error handling with custom exceptions and detailed context
+    - Structured logging with contextual information and performance metrics
+    - Complete OAuth authentication flows with automatic retry logic
+    - Advanced tool retrieval with filtering, modification, and optimization
+    - PostgreSQL-based conversation memory with automatic schema management
+    - Thread-safe operations with proper resource management and connection pooling
 
 Author: Tejus Gupta <tejus3131@gmail.com>
-Version: 1.0.0
+Version: 1.0.2
 License: MIT
 """
 

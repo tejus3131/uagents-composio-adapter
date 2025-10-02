@@ -5,7 +5,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Typed with mypy](https://img.shields.io/badge/typed-mypy-blue.svg)](https://github.com/python/mypy)
 
-A production-ready **Composio integration module** for **uAgents framework** with **LangChain-based AI agents**. This module provides a comprehensive, async-first integration layer for building AI agents that can authenticate users, manage tool access, and execute actions through the Composio platform.
+A production-ready **Composio integration module** for **uAgents framework** with **LangChain-based AI agents**. This module provides a comprehensive, async-first integration layer for building intelligent multi-agent systems that can authenticate users, manage tool access, and execute actions through the Composio platform with an advanced orchestrator architecture.
 
 ## 🚀 Features
 
@@ -18,6 +18,9 @@ A production-ready **Composio integration module** for **uAgents framework** wit
 - **🧵 Thread-Safe Operations**: Proper resource management and connection pooling
 - **📊 Health Monitoring**: Built-in health checks and service monitoring capabilities
 - **🎛️ Tool Modifiers**: Comprehensive support for schema, before-execute, and after-execute modifiers
+- **🎭 Multi-Agent Orchestrator**: Intelligent orchestrator agent that routes requests to specialized tool agents
+- **👤 Persona Customization**: Configurable persona prompts to guide orchestrator agent behavior and decision-making
+- **🤖 Specialized Agents**: Automatic creation of specialized agents for different tool groups with optimized prompts
 
 ## 📦 Installation
 
@@ -206,6 +209,66 @@ async with ComposioService(
     agent.include(service.protocol, publish_manifest=True)
 ```
 
+### Multi-Agent Orchestrator System
+
+```python
+import asyncio
+from uagents import Agent
+from uagents_composio_adapter import ComposioConfig, ToolConfig, ComposioService
+
+async def main():
+    # Multiple tool configurations for different specialized agents
+    tool_configs = [
+        ToolConfig.from_toolkits(
+            tool_group_name="GitHub Management",
+            auth_config_id=os.getenv("GITHUB_AUTH_ID"),
+            toolkit="GITHUB",
+            limit=5
+        ),
+        ToolConfig.from_toolkits(
+            tool_group_name="Email Operations",
+            auth_config_id=os.getenv("GMAIL_AUTH_ID"),
+            toolkit="GMAIL",
+            limit=3
+        ),
+        ToolConfig.from_toolkits(
+            tool_group_name="Calendar Management",
+            auth_config_id=os.getenv("CALENDAR_AUTH_ID"),
+            toolkit="GOOGLECALENDAR",
+            limit=4
+        )
+    ]
+
+    # Create configuration with persona prompt
+    composio_config = ComposioConfig.from_env(
+        tool_configs=tool_configs,
+        persona_prompt="You are a productivity-focused AI assistant. Prioritize efficiency and provide clear, actionable guidance for task automation."
+    )
+
+    # Initialize agent
+    agent = Agent(
+        name="Multi-Agent Orchestrator",
+        seed="orchestrator_seed",
+        port=8001,
+        mailbox=True
+    )
+
+    # Create orchestrator service with specialized agents
+    async with ComposioService(composio_config=composio_config) as service:
+        # The service automatically creates:
+        # 1. GitHub Management Agent - handles repository operations
+        # 2. Email Operations Agent - manages email tasks
+        # 3. Calendar Management Agent - handles scheduling
+        # 4. Orchestrator Agent - routes requests to appropriate specialists
+
+        agent.include(service.protocol, publish_manifest=True)
+        logger.info("🚀 Multi-agent orchestrator system started!")
+        await agent.run_async()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
 ### Complete Production Example
 
 ```python
@@ -291,10 +354,14 @@ if __name__ == "__main__":
 │  │  │           Authentication Flow               │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
 │  │  ┌─────────────────────────────────────────────┐    │    │
-│  │  │           Tool Management                   │    │    │
+│  │  │          Orchestrator Agent                 │    │    │
+│  │  │  ┌─────────────┬─────────────┬───────────┐   │    │    │
+│  │  │  │ GitHub      │ Email       │ Calendar  │   │    │    │
+│  │  │  │ Agent       │ Agent       │ Agent     │   │    │    │
+│  │  │  └─────────────┴─────────────┴───────────┘   │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
 │  │  ┌─────────────────────────────────────────────┐    │    │
-│  │  │           LangChain Agent                   │    │    │
+│  │  │           Tool Management                   │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────┘    │
 ├─────────────────────────────────────────────────────────────┤
@@ -356,7 +423,7 @@ ruff check uagents_composio_adapter/
 ### Core Classes
 
 #### `ComposioService`
-Main service class for Composio integration.
+Main service class for Composio integration with multi-agent orchestrator support.
 
 ```python
 class ComposioService:
@@ -374,6 +441,24 @@ class ComposioService:
 
     async def health_check(self) -> dict[str, Any]: ...
     async def cleanup(self) -> None: ...
+```
+
+#### `ComposioConfig`
+Configuration class with persona prompt support.
+
+```python
+class ComposioConfig:
+    api_key: str
+    persona_prompt: str | None = None
+    tool_configs: list[ToolConfig]
+    timeout: int = 300
+
+    @classmethod
+    def from_env(
+        cls,
+        tool_configs: list[ToolConfig] | None = None,
+        persona_prompt: str | None = None,
+    ) -> "ComposioConfig": ...
 ```
 
 #### `ToolConfig`

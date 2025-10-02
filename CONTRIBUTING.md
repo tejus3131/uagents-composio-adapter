@@ -325,6 +325,35 @@ Add screenshots to help explain your changes.
 4. **Logging**: Add structured logging for debugging and monitoring
 5. **Thread Safety**: Ensure new features are thread-safe
 6. **Resource Management**: Proper cleanup of resources
+7. **Multi-Agent Compatibility**: Consider how new features integrate with the orchestrator system
+
+### Multi-Agent Architecture Guidelines
+
+When contributing to the multi-agent orchestrator system:
+
+#### Orchestrator Agent Development
+- The orchestrator agent should remain tool-agnostic and focus on routing decisions
+- Use clear, descriptive prompts that help the orchestrator understand agent capabilities
+- Implement robust error handling for agent routing failures
+- Consider performance implications of agent selection algorithms
+
+#### Specialized Agent Development
+- Keep specialized agents focused on their specific domain (e.g., GitHub, Email, Calendar)
+- Ensure specialized agents have optimized prompts for their tool sets
+- Implement proper tool result validation and error handling
+- Consider memory and context management for specialized agents
+
+#### Tool Integration
+- Group tools logically by functionality and domain
+- Provide clear tool descriptions and usage examples
+- Implement proper tool modifiers for enhanced functionality
+- Consider tool dependencies and authentication requirements
+
+#### Persona and Prompt Engineering
+- Design prompts that work well with persona customization
+- Ensure prompts are clear, concise, and actionable
+- Consider different user personas and use cases
+- Test prompts with various LLM models for compatibility
 
 ### Example Feature Implementation
 

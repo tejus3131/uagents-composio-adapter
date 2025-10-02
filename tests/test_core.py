@@ -1,7 +1,9 @@
 """
 Tests for uagents-composio-adapter package.
 
-This module contains test cases for the uAgents Composio Adapter package.
+This module contains test cases for the uAgents Composio Adapter package,
+including tests for the multi-agent orchestrator architecture, persona
+customization, and enhanced tool configuration features.
 """
 
 from typing import Any
@@ -9,6 +11,7 @@ from typing import Any
 import pytest
 
 from uagents_composio_adapter import (
+    ComposioConfig,
     ComposioError,
     Modifiers,
     PostgresMemoryConfig,
@@ -19,7 +22,7 @@ from uagents_composio_adapter import (
 
 def test_version() -> None:
     """Test that version is properly defined."""
-    assert __version__ == "1.0.0"
+    assert __version__ == "1.0.2"
 
 
 def test_tool_config_from_tools() -> None:
@@ -137,3 +140,99 @@ def test_composio_error() -> None:
     assert error.details == {"key": "value"}
     assert error.operation == "test_operation"
     assert "test_operation: Test error message" in str(error)
+
+
+def test_composio_config_persona_prompt() -> None:
+    """Test ComposioConfig creation with persona prompt for multi-agent orchestrator."""
+    tool_config = ToolConfig.from_toolkits(
+        tool_group_name="GitHub Tools",
+        auth_config_id="test_auth_123",
+        toolkit="GITHUB",
+    )
+
+    # Test with persona prompt
+    config = ComposioConfig(
+        api_key="test_api_key_123",
+        tool_configs=[tool_config],
+        persona_prompt="You are a helpful AI assistant specializing in GitHub operations.",
+    )
+
+    assert config.api_key == "test_api_key_123"
+    assert config.tool_configs is not None
+    assert len(config.tool_configs) == 1
+    assert (
+        config.persona_prompt
+        == "You are a helpful AI assistant specializing in GitHub operations."
+    )
+    assert config.timeout == 60  # default value
+
+    # Test without persona prompt
+    config_no_persona = ComposioConfig(
+        api_key="test_api_key_456",
+        tool_configs=[tool_config],
+    )
+
+    assert config_no_persona.persona_prompt is None
+
+
+def test_composio_config_validation() -> None:
+    """Test ComposioConfig validation for required fields."""
+    tool_config = ToolConfig.from_toolkits(
+        tool_group_name="Test Tools",
+        auth_config_id="test_auth_789",
+        toolkit="TEST",
+    )
+
+    # Test empty API key validation
+    with pytest.raises(ValueError, match="api_key cannot be empty"):
+        ComposioConfig(
+            api_key="",
+            tool_configs=[tool_config],
+        )
+
+    # Test invalid timeout
+    with pytest.raises(ValueError, match="timeout must be a positive integer"):
+        ComposioConfig(
+            api_key="valid_key",
+            tool_configs=[tool_config],
+            timeout=0,
+        )
+
+    # Test empty tool_configs
+    with pytest.raises(ValueError, match="tool_configs must be provided and non-empty"):
+        ComposioConfig(
+            api_key="valid_key",
+            tool_configs=[],
+        )
+
+
+def test_composio_config_auth_config_ids() -> None:
+    """Test ComposioConfig auth config ID extraction for multi-agent setup."""
+    tool_config1 = ToolConfig.from_toolkits(
+        tool_group_name="GitHub Tools",
+        auth_config_id="github_auth_123",
+        toolkit="GITHUB",
+    )
+
+    tool_config2 = ToolConfig.from_toolkits(
+        tool_group_name="Gmail Tools",
+        auth_config_id="gmail_auth_456",
+        toolkit="GMAIL",
+    )
+
+    config = ComposioConfig(
+        api_key="test_key",
+        tool_configs=[tool_config1, tool_config2],
+    )
+
+    auth_ids = config.get_auth_config_ids()
+    assert len(auth_ids) == 2
+    assert "github_auth_123" in auth_ids
+    assert "gmail_auth_456" in auth_ids
+
+    # Test tool group name lookup
+    assert (
+        config.get_tool_group_name_by_auth_config("github_auth_123") == "GitHub Tools"
+    )
+    assert config.get_tool_group_name_by_auth_config("gmail_auth_456") == "Gmail Tools"
+    assert config.get_tool_group_name_by_auth_config("nonexistent") is None

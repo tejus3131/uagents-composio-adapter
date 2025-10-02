@@ -164,7 +164,7 @@ def test_composio_config_persona_prompt() -> None:
         config.persona_prompt
         == "You are a helpful AI assistant specializing in GitHub operations."
     )
-    assert config.timeout == 60  # default value
+    assert config.timeout == 300
 
     # Test without persona prompt
     config_no_persona = ComposioConfig(

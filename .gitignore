@@ -17,9 +17,13 @@ wheels/
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
 
 # mypy
 .mypy_cache/
 
 # uv
 .python-version
+
+# ruff
+.ruff_cache/

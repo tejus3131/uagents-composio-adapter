@@ -41,9 +41,9 @@ Usage:
     async def main():
         # Configure multiple tool groups for specialized agents
         tool_configs = [
-            ToolConfig.from_toolkits("GitHub Tools", "auth_123", "GITHUB", limit=5),
-            ToolConfig.from_toolkits("Email Tools", "auth_456", "GMAIL", limit=3),
-            ToolConfig.from_toolkits("Calendar Tools", "auth_789", "GOOGLECALENDAR", limit=4)
+            ToolConfig.from_toolkit("GitHub Tools", "auth_123", "GITHUB", limit=5),
+            ToolConfig.from_toolkit("Email Tools", "auth_456", "GMAIL", limit=3),
+            ToolConfig.from_toolkit("Calendar Tools", "auth_789", "GOOGLECALENDAR", limit=4)
         ]
 
         # Create configuration with persona customization
@@ -63,7 +63,7 @@ Usage:
     ```
 
 Author: Tejus Gupta <tejus3131@gmail.com>
-Version: 1.0.2
+Version: 1.0.3
 License: MIT
 """
 
@@ -402,7 +402,7 @@ class ToolConfig(BaseModel):
         )
 
         # Fetch from toolkit with limits
-        config = ToolConfig.from_toolkits("Github Tools", "auth_123", "GITHUB", limit=5)
+        config = ToolConfig.from_toolkit("Github Tools", "auth_123", "GITHUB", limit=5)
 
         # Search with scopes
         config = ToolConfig.from_toolkit_with_scopes(
@@ -440,7 +440,7 @@ class ToolConfig(BaseModel):
     """Semantic search query for finding relevant tools (e.g., 'organize contacts', 'repository issues'). Cannot be combined with tools or scopes."""
 
     limit: int | None = None
-    """Maximum number of tools to return (1-100). Default varies by filter type (typically 20)."""
+    """Maximum number of tools to return (1-100)."""
 
     modifiers: Modifiers | None = None
     """Optional tool modifiers for customizing tool behavior (schema, before_execute, after_execute functions)."""
@@ -568,7 +568,7 @@ class ToolConfig(BaseModel):
         )
 
     @classmethod
-    def from_toolkits(
+    def from_toolkit(
         cls,
         tool_group_name: str,
         auth_config_id: AuthConfigId,
@@ -580,7 +580,6 @@ class ToolConfig(BaseModel):
         Create configuration to fetch tools from a specific toolkit.
 
         Tools are returned in order of importance as determined by Composio.
-        The default limit is 20 tools to prevent overwhelming the LLM.
 
         Args:
             tool_group_name: Logical name for the group of tools being configured (e.g., "GitHub Tools", "Slack Tools"). Used for organization and logging.
@@ -598,7 +597,7 @@ class ToolConfig(BaseModel):
         Example:
             ```python
             # Get top 5 GitHub tools
-            config = ToolConfig.from_toolkits(
+            config = ToolConfig.from_toolkit(
                 "Github Tools",
                 "auth_config_123",
                 "GITHUB",
@@ -764,7 +763,7 @@ class ComposioConfig(BaseModel):
         # Create from environment variables
         config = ComposioConfig.from_env(
             tool_configs=[
-                ToolConfig.from_toolkits("auth_123", "GITHUB", limit=5),
+                ToolConfig.from_toolkit("auth_123", "GITHUB", limit=5),
                 ToolConfig.from_search("auth_456", "calendar events")
             ]
         )
@@ -849,7 +848,7 @@ class ComposioConfig(BaseModel):
             ```python
             config = ComposioConfig.from_env(
                 tool_configs=[
-                    ToolConfig.from_toolkits("auth_123", "GITHUB")
+                    ToolConfig.from_toolkit("auth_123", "GITHUB")
                 ]
             )
             ```
@@ -1140,7 +1139,7 @@ class ComposioClient:
         async def main():
             config = ComposioConfig.from_env(
                 tool_configs=[
-                    ToolConfig.from_toolkits("auth_123", "GITHUB", limit=5)
+                    ToolConfig.from_toolkit("auth_123", "GITHUB", limit=5)
                 ]
             )
 
@@ -2012,7 +2011,7 @@ class ComposioService:
             # Configure Composio integration
             config = ComposioConfig.from_env(
                 tool_configs=[
-                    ToolConfig.from_toolkits("GitHub Tools", "auth_123", "GITHUB"),
+                    ToolConfig.from_toolkit("GitHub Tools", "auth_123", "GITHUB"),
                     ToolConfig.from_search("Calendar Tools", "auth_456", "calendar events")
                 ]
             )
@@ -2070,9 +2069,9 @@ class ComposioService:
 
         Args:
             composio_config: Configuration for Composio tool integration
-            api_key: API key for the language model (or set ASI_API_KEY env var)
-            model_name: Name of the language model to use (or set ASI_MODEL_NAME env var)
-            base_url: Base URL for the language model API (or set ASI_BASE_URL env var)
+            api_key: API key for the language model (or set LLM_API_KEY env var)
+            model_name: Name of the language model to use (or set LLM_MODEL_NAME env var)
+            base_url: Base URL for the language model API (or set LLM_BASE_URL env var)
             memory_config: Optional PostgreSQL configuration for persistent memory
 
         Raises:
@@ -2080,9 +2079,9 @@ class ComposioService:
             ConfigurationError: If Composio client initialization fails
 
         Environment Variables:
-            ASI_API_KEY: API key for language model authentication
-            ASI_BASE_URL: Base URL for language model API (default: https://api.asi1.ai/v1)
-            ASI_MODEL_NAME: Model name to use (default: asi1-mini)
+            LLM_API_KEY: API key for language model authentication
+            LLM_BASE_URL: Base URL for language model API (default: https://api.asi1.ai/v1)
+            LLM_MODEL_NAME: Model name to use (default: asi1-mini)
 
         Example:
             ```python
@@ -2109,31 +2108,31 @@ class ComposioService:
         )
 
         # Resolve API configuration from parameters or environment
-        api_key = api_key or os.getenv("ASI_API_KEY")
+        api_key = api_key or os.getenv("LLM_API_KEY")
         if not api_key:
             logger.error(
-                "API key not provided in parameter or ASI_API_KEY environment variable"
+                "API key not provided in parameter or LLM_API_KEY environment variable"
             )
             raise ValueError(
-                "API key must be provided via parameter or ASI_API_KEY env var"
+                "API key must be provided via parameter or LLM_API_KEY env var"
             )
 
-        base_url = base_url or os.getenv("ASI_BASE_URL", "https://api.asi1.ai/v1")
+        base_url = base_url or os.getenv("LLM_BASE_URL", "https://api.asi1.ai/v1")
         if not base_url:
             logger.error(
-                "Base URL not provided in parameter or ASI_BASE_URL environment variable"
+                "Base URL not provided in parameter or LLM_BASE_URL environment variable"
             )
             raise ValueError(
-                "Base URL must be provided via parameter or ASI_BASE_URL env var"
+                "Base URL must be provided via parameter or LLM_BASE_URL env var"
             )
 
-        model = model_name or os.getenv("ASI_MODEL_NAME", "asi1-mini")
+        model = model_name or os.getenv("LLM_MODEL_NAME", "asi1-mini")
         if not model:
             logger.error(
-                "Model name not provided in parameter or ASI_MODEL_NAME environment variable"
+                "Model name not provided in parameter or LLM_MODEL_NAME environment variable"
             )
             raise ValueError(
-                "Model name must be provided via parameter or ASI_MODEL_NAME env var"
+                "Model name must be provided via parameter or LLM_MODEL_NAME env var"
             )
 
         # Initialize instance variables
@@ -2659,17 +2658,23 @@ class ComposioService:
         """
         Generates a prompt for an LLM agent, detailing all its available tools,
         their descriptions, parameters, and required inputs.
-
-        Args:
-            tool_list: A list of tool definition dictionaries.
-            agent_name: The name of the agent (e.g., 'LinkedIn Agent', 'Gmail Agent').
-
-        Returns:
-            A formatted string prompt for the LLM.
         """
         tools_prompt = f"## {agent_name} Agent Tool Definitions\n"
-        tools_prompt += f"You are the **{agent_name} Agent**. Your task is to process user requests by invoking the following tools. For each tool call, you **must** use the function name and provide the correct parameters.\n\n"
-        tools_prompt += "---"
+        tools_prompt += f"You are the **{agent_name} Agent**. Your task is to process user requests by invoking the appropriate tools.\n\n"
+
+        tools_prompt += """**IMPORTANT GUIDELINES:**
+
+    1. **Check Relevant Data First**: You may receive a 'relevant_data' dictionary containing information from other agents or previous steps. Always examine this data before calling tools - it may contain exactly what you need.
+
+    2. **Use Relevant Data**: If relevant_data contains the information needed for your task, use it directly in your tool calls rather than fetching it again.
+
+    3. **Single Tool Call**: Generate only ONE function call per turn based on the task description and available tools.
+
+    4. **Error Handling**: If any error occurs during tool execution, respond with a clear error message and do not attempt to call another tool.
+
+    ---
+
+    """
 
         for tool_def in tool_list:
             tool_dict = await self._structured_tool_to_dict(tool_def)
@@ -2680,7 +2685,7 @@ class ComposioService:
             required_params = parameters.get("required", [])
             properties = parameters.get("properties", {})
 
-            tools_prompt += f"\n\n### Tool: **{name}**\n"
+            tools_prompt += f"\n### Tool: **{name}**\n"
             tools_prompt += f"**Description:** {description}\n"
             tools_prompt += "**Parameters:**\n"
 
@@ -2699,20 +2704,19 @@ class ComposioService:
                     f"- **{prop_name}** ({param_type}, {is_required}): {param_desc}"
                 )
 
-                # Check for nested properties (common for 'object' types like 'distribution')
                 if param_type == "object" and "properties" in prop_data:
                     tools_prompt += "\n  - **Nested Properties:** " + ", ".join(
                         prop_data["properties"].keys()
                     )
 
-                # Check for allowed values (enums)
                 if "enum" in prop_data:
                     allowed_values = ", ".join([f"`{v}`" for v in prop_data["enum"]])
                     tools_prompt += f" **Allowed Values:** {allowed_values}"
 
                 tools_prompt += "\n"
 
-        tools_prompt += "\n---\n**Rule:** Only generate a single function call per turn based on the provided tools. If any error occurs during tool execution, respond with a clear error message and do not attempt to call another tool."
+        tools_prompt += "\n---\n**Remember**: Check relevant_data first, then use tools to complete the task.\n"
+
         return tools_prompt
 
     async def _create_orchestrator_prompt(
@@ -2722,15 +2726,10 @@ class ComposioService:
         """
         Generates a high-level prompt for an Orchestrator LLM, explaining which
         agents are available and the primary functions they manage.
-
-        Args:
-            agent_tools_map: A dictionary mapping agent names to their list of tools.
-
-        Returns:
-            A formatted string prompt for the Orchestrator LLM.
         """
         orchestrator_prompt = "## Orchestrator Agent: Available Tool Agents\n"
-        orchestrator_prompt += "You are the **Orchestrator Agent**. Your primary role is to determine which specialized agent can best handle the user's request.\n\n"
+        orchestrator_prompt += "You are the **Orchestrator Agent**. Your primary role is to determine which specialized agent can best handle the user's request and coordinate multi-step tasks.\n\n"
+
         orchestrator_prompt += (
             "**You can invoke any of the following specialized agents:**\n"
         )
@@ -2750,15 +2749,38 @@ class ComposioService:
 
             orchestrator_prompt += f"### Agent: **{agent_name}**\n"
             orchestrator_prompt += (
-                f"This agent is responsible for tasks related to **{agent_name}**.\n"
+                f"This agent handles tasks related to **{agent_name}**.\n"
             )
             orchestrator_prompt += (
                 "**Key Capabilities:** " + ", ".join(tool_summaries) + "\n\n"
             )
 
-        orchestrator_prompt += "**Rules:** To invoke an agent, You must provide the full context of user need related to that agent, along with any data relevant to the agent's tools.\n\n"
+        orchestrator_prompt += """---
 
-        orchestrator_prompt += "---\n**Instruction:** Read the user's request and respond by invoking *only* the single best-suited agent. Do not attempt to call the individual tools yourself. If no agent is appropriate, respond with a polite message indicating that you cannot assist with the request.\n\n"
+    **CRITICAL RULES FOR MULTI-STEP TASKS:**
+
+    1. **Memory Isolation**: Each specialized agent has its own separate memory. They CANNOT see each other's conversation history or data.
+
+    2. **Data Passing**: When a task requires multiple agents in sequence:
+    - Call the first agent and wait for its response
+    - Extract ALL relevant data from the response
+    - Pass that data to the next agent via the 'relevant_data' parameter
+
+    3. **Tool Invocation Format**:
+    - agent_name(task_description="clear description", relevant_data={"key": "value"})
+    - The 'relevant_data' dict should contain any information the agent needs from previous steps
+
+    4. **Sequential Processing**:
+    - For tasks like "fetch X and send it via Y", you must:
+        a) Call the agent that fetches X
+        b) Extract the fetched data from the response
+        c) Call the agent that sends via Y, passing the data in relevant_data
+
+    5. **Single Agent Per Turn**: Invoke only ONE agent per reasoning step. Wait for its response before deciding the next action.
+
+    6. **Final Response**: After all agents complete, synthesize their results into a single coherent response that describes what was accomplished.
+
+    """
 
         if (
             self._composio_config.persona_prompt
@@ -2767,7 +2789,8 @@ class ComposioService:
             orchestrator_prompt += (
                 f"### Your Persona\n{self._composio_config.persona_prompt.strip()}\n\n"
             )
-            orchestrator_prompt += "Use this persona to guide your decision-making when selecting the appropriate agent to handle the user's request.\n"
+            orchestrator_prompt += "Use this persona in your final response to the user, but maintain clarity when coordinating between agents.\n"
+
         return orchestrator_prompt
 
     async def _create_specialized_agent_tool(
@@ -2823,29 +2846,51 @@ class ComposioService:
 
             @tool(
                 agent_name.lower().replace(" ", "_") + "_agent",
-                description=f"To use any tools from the {agent_name}, call this function with the task description and relevant data.",
+                description=f"Use this agent to perform tasks requiring {agent_name} capabilities. Pass any data from previous steps via relevant_data.",
             )
             async def agent_tool(
-                task_description: str, relevant_data: dict[str, Any]
+                task_description: str, relevant_data: dict[str, Any] | None = None
             ) -> str:
                 """
                 Execute a task using the specialized agent's tools.
 
                 Args:
-                    task_description: Natural language description of the task to perform
-                    relevant_data: Dictionary containing any relevant context or data for the task
+                    task_description: Clear description of what needs to be done
+                    relevant_data: Dictionary containing data from previous agents/steps (e.g., {"user_profile": {...}, "recipient": "email@example.com"})
 
                 Returns:
                     str: The agent's response after executing the task
                 """
-                prompt = f"""
-                Query: {task_description}
-                Relevant Data: {relevant_data}
+                logger.info(
+                    f"Invoking {agent_name} with task: {task_description}",
+                    extra={
+                        "relevant_data_provided": relevant_data is not None,
+                        "relevant_data_keys": (
+                            list(relevant_data.keys()) if relevant_data else []
+                        ),
+                    },
+                )
 
-                Use the relevant tool to fulfill the user's request.
-                """
+                # Make relevant_data very visible in the prompt
+                prompt = f"Task: {task_description}\n\n"
+                if relevant_data:
+                    prompt += "Data from previous steps (use this information):\n"
+                    prompt += f"{relevant_data}\n\n"
+                else:
+                    prompt += "No data from previous steps provided.\n\n"
 
-                return await self._run_agent_query(agent, prompt, specialized_thread_id)
+                prompt += "Execute the task using the appropriate tools."
+
+                response = await self._run_agent_query(
+                    agent, prompt, specialized_thread_id
+                )
+
+                logger.info(
+                    f"Response from {agent_name}",
+                    extra={"response_length": len(response)},
+                )
+
+                return response
 
             logger.info(f"Specialized Agent {agent_name} created successfully")
             return agent_tool
@@ -3349,7 +3394,7 @@ class ComposioService:
             "status": "healthy",
             "timestamp": datetime.now(UTC).isoformat(),
             "components": {},
-            "version": "1.0.2",
+            "version": "1.0.3",
         }
 
         try:
@@ -3456,7 +3501,7 @@ class ComposioService:
         """
         return {
             "service_type": "ComposioService",
-            "version": "1.0.2",
+            "version": "1.0.3",
             "llm_model": getattr(self._llm, "model_name", "unknown"),
             "auth_configs_count": len(self._composio_config.get_auth_config_ids()),
             "tool_configs_count": len(self._composio_config.tool_configs or []),
@@ -3509,7 +3554,7 @@ class ComposioService:
 
 
 # Version information
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __author__ = "Tejus Gupta <tejus3131@gmail.com>"
 __license__ = "MIT"
 

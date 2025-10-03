@@ -27,21 +27,13 @@ A production-ready **Composio integration module** for **uAgents framework** wit
 ### Using pip (recommended)
 
 ```bash
-pip install uagents-composio-adapter
+pip install --pre -U uagents-composio-adapter
 ```
 
 ### Using uv (faster)
 
 ```bash
-uv add uagents-composio-adapter
-```
-
-### Development Installation
-
-```bash
-git clone https://github.com/tejus3131/uagents-composio-adapter.git
-cd uagents-composio-adapter
-pip install -e ".[dev,examples]"
+uv add --prerelease=allow uagents-composio-adapter
 ```
 
 ## 🏁 Quick Start
@@ -55,7 +47,7 @@ from uagents_composio_adapter import ComposioConfig, ToolConfig, ComposioService
 
 async def main():
     # Configure tools
-    tool_config = ToolConfig.from_toolkits(
+    tool_config = ToolConfig.from_toolkit(
         tool_group_name="GitHub Tools",
         auth_config_id="your_github_auth_config_id",
         toolkit="GITHUB",
@@ -91,9 +83,9 @@ GITHUB_AUTH_CONFIG_ID=your_github_auth_config_id
 LINKEDIN_AUTH_CONFIG_ID=your_linkedin_auth_config_id
 
 # LLM Configuration (ASI1 or OpenAI compatible)
-ASI_API_KEY=your_llm_api_key_here
-ASI_BASE_URL=https://api.asi1.ai/v1
-ASI_MODEL_NAME=asi1-mini
+LLM_API_KEY=your_llm_api_key_here
+LLM_BASE_URL=https://api.asi1.ai/v1
+LLM_MODEL_NAME=asi1-mini
 
 # PostgreSQL Configuration (optional - for memory persistence)
 PSQL_HOST=localhost
@@ -118,7 +110,7 @@ github_tools = ToolConfig.from_tools(
 )
 
 # 2. All tools from a toolkit with limit
-slack_tools = ToolConfig.from_toolkits(
+slack_tools = ToolConfig.from_toolkit(
     tool_group_name="Slack Communication",
     auth_config_id="auth_456",
     toolkit="SLACK",
@@ -175,7 +167,7 @@ modifiers = Modifiers.combine(
 )
 
 # Apply to tool configuration
-config = ToolConfig.from_toolkits(
+config = ToolConfig.from_toolkit(
     tool_group_name="Enhanced Tools",
     auth_config_id="auth_123",
     toolkit="GITHUB",
@@ -219,19 +211,19 @@ from uagents_composio_adapter import ComposioConfig, ToolConfig, ComposioService
 async def main():
     # Multiple tool configurations for different specialized agents
     tool_configs = [
-        ToolConfig.from_toolkits(
+        ToolConfig.from_toolkit(
             tool_group_name="GitHub Management",
             auth_config_id=os.getenv("GITHUB_AUTH_ID"),
             toolkit="GITHUB",
             limit=5
         ),
-        ToolConfig.from_toolkits(
+        ToolConfig.from_toolkit(
             tool_group_name="Email Operations",
             auth_config_id=os.getenv("GMAIL_AUTH_ID"),
             toolkit="GMAIL",
             limit=3
         ),
-        ToolConfig.from_toolkits(
+        ToolConfig.from_toolkit(
             tool_group_name="Calendar Management",
             auth_config_id=os.getenv("CALENDAR_AUTH_ID"),
             toolkit="GOOGLECALENDAR",
@@ -293,7 +285,7 @@ async def main():
             auth_config_id=os.getenv("GITHUB_AUTH_ID"),
             tools=["GITHUB_CREATE_AN_ISSUE", "GITHUB_LIST_ISSUES"]
         ),
-        ToolConfig.from_toolkits(
+        ToolConfig.from_toolkit(
             tool_group_name="Slack Communication",
             auth_config_id=os.getenv("SLACK_AUTH_ID"),
             toolkit="SLACK",
@@ -470,7 +462,7 @@ class ToolConfig:
     def from_tools(cls, tool_group_name: str, auth_config_id: str, tools: list[str]) -> "ToolConfig": ...
 
     @classmethod
-    def from_toolkits(cls, tool_group_name: str, auth_config_id: str, toolkit: str, limit: int | None = None) -> "ToolConfig": ...
+    def from_toolkit(cls, tool_group_name: str, auth_config_id: str, toolkit: str, limit: int | None = None) -> "ToolConfig": ...
 
     @classmethod
     def from_search(cls, tool_group_name: str, auth_config_id: str, search: str, toolkit: str | None = None, limit: int | None = None) -> "ToolConfig": ...

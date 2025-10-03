@@ -22,7 +22,7 @@ from uagents_composio_adapter import (
 
 def test_version() -> None:
     """Test that version is properly defined."""
-    assert __version__ == "1.0.2"
+    assert __version__ == "1.0.3"
 
 
 def test_tool_config_from_tools() -> None:
@@ -42,7 +42,7 @@ def test_tool_config_from_tools() -> None:
 
 def test_tool_config_from_toolkits() -> None:
     """Test ToolConfig creation with toolkit."""
-    config = ToolConfig.from_toolkits(
+    config = ToolConfig.from_toolkit(
         tool_group_name="GitHub Tools",
         auth_config_id="test_auth_456",
         toolkit="GITHUB",
@@ -91,7 +91,7 @@ def test_tool_config_validation_errors() -> None:
 
     # Invalid limit
     with pytest.raises(ValueError, match="limit must be an integer between 1 and 100"):
-        ToolConfig.from_toolkits("Test", "auth_123", "GITHUB", limit=0)
+        ToolConfig.from_toolkit("Test", "auth_123", "GITHUB", limit=0)
 
 
 def test_postgres_memory_config() -> None:
@@ -144,7 +144,7 @@ def test_composio_error() -> None:
 
 def test_composio_config_persona_prompt() -> None:
     """Test ComposioConfig creation with persona prompt for multi-agent orchestrator."""
-    tool_config = ToolConfig.from_toolkits(
+    tool_config = ToolConfig.from_toolkit(
         tool_group_name="GitHub Tools",
         auth_config_id="test_auth_123",
         toolkit="GITHUB",
@@ -177,7 +177,7 @@ def test_composio_config_persona_prompt() -> None:
 
 def test_composio_config_validation() -> None:
     """Test ComposioConfig validation for required fields."""
-    tool_config = ToolConfig.from_toolkits(
+    tool_config = ToolConfig.from_toolkit(
         tool_group_name="Test Tools",
         auth_config_id="test_auth_789",
         toolkit="TEST",
@@ -208,13 +208,13 @@ def test_composio_config_validation() -> None:
 
 def test_composio_config_auth_config_ids() -> None:
     """Test ComposioConfig auth config ID extraction for multi-agent setup."""
-    tool_config1 = ToolConfig.from_toolkits(
+    tool_config1 = ToolConfig.from_toolkit(
         tool_group_name="GitHub Tools",
         auth_config_id="github_auth_123",
         toolkit="GITHUB",
     )
 
-    tool_config2 = ToolConfig.from_toolkits(
+    tool_config2 = ToolConfig.from_toolkit(
         tool_group_name="Gmail Tools",
         auth_config_id="gmail_auth_456",
         toolkit="GMAIL",

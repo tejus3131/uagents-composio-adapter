@@ -5,7 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.2] - 2025-10-02
+## [1.0.3] - 2025-10-03
+
+### Changed
+- **🔧 Method Renaming**: Renamed `ToolConfig.from_toolkits()` to `ToolConfig.from_toolkit()` for better naming consistency and clarity
+- **📝 Documentation Updates**: Updated all examples and documentation to use the new `from_toolkit()` method name
+- **🌐 LLM Configuration Flexibility**: Changed environment variable names from ASI-specific to generic LLM configuration:
+  - `ASI_API_KEY` → `LLM_API_KEY`
+  - `ASI_BASE_URL` → `LLM_BASE_URL`
+  - `ASI_MODEL_NAME` → `LLM_MODEL_NAME`
+- **🤖 Enhanced Multi-Agent Coordination**: Improved orchestrator and specialized agent prompts for better multi-step task handling:
+  - Added critical rules for memory isolation between agents
+  - Enhanced data passing between agents via `relevant_data` parameter
+  - Improved guidelines for sequential task processing
+  - Better error handling instructions
+- **📋 Installation Instructions**: Updated README with `--pre` and `--prerelease=allow` flags for pip and uv installations
+- **🔄 Optional Parameters**: Made `relevant_data` parameter optional in specialized agent tools with proper type hint (`dict[str, Any] | None = None`)
+- **📊 Improved Logging**: Added detailed logging for agent invocations with relevant_data tracking
+
+### Fixed
+- **📝 Documentation Clarity**: Removed redundant docstring sections in prompt generation methods
+- **🎯 Prompt Formatting**: Improved specialized agent prompt structure with better visibility for relevant_data
+- **📦 Build Configuration**: Reorganized `pyproject.toml` dependency groups for better consistency
+
+### Removed
+- **🧹 Coverage Files**: Removed `coverage.xml` from repository and added to `.gitignore`
+- **📝 Installation Docs**: Removed "Development Installation" section from README (redundant with existing instructions)
+- **💬 Verbose Comments**: Cleaned up unnecessary inline comments in core.py
+
+## [1.0.2]- 2025-10-02
 
 ### Added
 - **🚀 Multi-Agent Orchestrator System**: Intelligent orchestrator agent that automatically routes user requests to specialized tool agents based on their capabilities

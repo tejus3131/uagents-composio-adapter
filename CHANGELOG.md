@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2025-10-06
+
+### Changed
+- **📝 Improved Logging Architecture**: Enhanced logging consistency by requiring `Context` parameter in core methods for better operation tracking and debugging
+- **🔧 Context-Aware Operations**: Updated all client methods to accept and use `Context` objects for centralized logging and session management:
+  - `create_auth_request()` now requires `ctx: Context` parameter
+  - `verify_auth_request()` now requires `ctx: Context` parameter
+  - `get_tools()` now requires `ctx: Context` parameter
+  - `connection_exists()` now requires `ctx: Context` parameter
+  - `initialize_db_pool()` now requires `ctx: Context` parameter
+- **🧠 Enhanced Memory Management**: Improved memory trimming algorithm with better token counting and agent prompt consideration:
+  - Added `agent_prompt` parameter to memory trimming factory
+  - Implemented iterative token trimming with safety margins
+  - Added fallback token management for edge cases
+- **🎯 Better Error Handling**: All logging operations now use context-specific loggers for improved traceability
+- **⚡ Performance Optimizations**: Enhanced memory trimming with multiple iteration approach to ensure token limits are respected
+
+### Updated
+- **📦 Dependency Updates**: Updated development dependencies:
+  - `ruff` from 0.13.2 to 0.13.3
+  - `xxhash` from 3.5.0 to 3.6.1
+  - `yarl` from 1.20.1 to 1.21.0
+
+### Technical Details
+- All async methods in `ComposioClient` and `ComposioService` now properly integrate with uAgents context system
+- Enhanced memory trimming logic with safety buffers and iterative optimization
+- Improved logging granularity with context-aware message tracking
+- Better separation of concerns between logging and business logic
+
 ## [1.0.3] - 2025-10-03
 
 ### Changed

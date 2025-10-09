@@ -2943,7 +2943,7 @@ class ComposioService:
                 prompt += "Execute the task using the appropriate tools."
 
                 response = await self._run_agent_query(
-                    agent, prompt, specialized_thread_id
+                    agent, prompt, specialized_thread_id, ctx=ctx
                 )
 
                 ctx.logger.info(

@@ -7,6 +7,8 @@
 
 A production-ready **Composio integration module** for **uAgents framework** with **LangChain-based AI agents**. This module provides a comprehensive, async-first integration layer for building intelligent multi-agent systems that can authenticate users, manage tool access, and execute actions through the Composio platform with an advanced orchestrator architecture.
 
+> For a detailed architectural deep dive (components, flows, diagrams, and future roadmap) see the [Architecture Overview](ARCHITECTURE.md).
+
 ## 🚀 Features
 
 - **🔧 Async/Await Support**: Built from the ground up with async/await for optimal performance

@@ -78,6 +78,32 @@ from datetime import datetime, timezone
 from typing import Any, Final
 from uuid import uuid4
 
+from composio import Composio, after_execute, before_execute, schema_modifier
+from composio.core.models.connected_accounts import ConnectionRequest
+from composio.exceptions import ComposioSDKTimeoutError
+from composio.types import Tool, ToolExecuteParams, ToolExecutionResponse
+from composio_langchain import LangchainProvider
+from langchain.agents import ToolNode, create_agent
+from langchain.tools import tool
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages.utils import count_tokens_approximately, trim_messages
+from langchain_core.tools.structured import StructuredTool
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+from uagents import Context, Protocol
+from uagents_core.contrib.protocols.chat import (
+    AgentContent,
+    ChatAcknowledgement,
+    ChatMessage,
+    EndSessionContent,
+    MetadataContent,
+    StartSessionContent,
+    TextContent,
+    chat_protocol_spec,
+)
+
 # Python 3.10 compatibility for UTC
 if sys.version_info >= (3, 11):
     from datetime import UTC
@@ -92,72 +118,6 @@ AuthConfigId = str
 ToolSlug = str
 SessionId = str
 
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError as e:
-    raise ImportError(
-        "langchain-openai package is required. Install with: pip install langchain-openai"
-    ) from e
-
-try:
-    from psycopg.rows import dict_row
-    from psycopg_pool import AsyncConnectionPool
-except ImportError as e:
-    raise ImportError(
-        "psycopg package is required. Install with: pip install 'psycopg[pool]'"
-    ) from e
-
-try:
-    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-except ImportError as e:
-    raise ImportError(
-        "langgraph package is required. Install with: pip install langgraph langgraph-checkpoint-postgres"
-    ) from e
-
-try:
-    from langchain.agents import ToolNode, create_agent
-    from langchain.tools import tool
-    from langchain_core.messages import BaseMessage, HumanMessage
-    from langchain_core.messages.utils import count_tokens_approximately, trim_messages
-    from langchain_core.tools.structured import StructuredTool
-except ImportError as e:
-    raise ImportError(
-        "langchain-core and langchain packages are required. Install with: pip install langchain langchain-core"
-    ) from e
-
-try:
-    from composio import Composio, after_execute, before_execute, schema_modifier
-    from composio.core.models.connected_accounts import ConnectionRequest
-    from composio.exceptions import ComposioSDKTimeoutError
-    from composio.types import Tool, ToolExecuteParams, ToolExecutionResponse
-except ImportError as e:
-    raise ImportError(
-        "composio package is required. Install with: pip install composio"
-    ) from e
-
-try:
-    from composio_langchain import LangchainProvider
-except ImportError:
-    raise ImportError(
-        "composio-langchain package is required. Install with: pip install composio-langchain"
-    ) from None
-
-try:
-    from uagents import Context, Protocol
-    from uagents_core.contrib.protocols.chat import (
-        AgentContent,
-        ChatAcknowledgement,
-        ChatMessage,
-        EndSessionContent,
-        MetadataContent,
-        StartSessionContent,
-        TextContent,
-        chat_protocol_spec,
-    )
-except ImportError as e:
-    raise ImportError(
-        "uagents package is required. Install with: pip install uagents"
-    ) from e
 
 # Constants
 DEFAULT_TIMEOUT: Final[int] = 300

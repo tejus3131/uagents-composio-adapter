@@ -63,7 +63,7 @@ Usage:
     ```
 
 Author: Tejus Gupta <tejus3131@gmail.com>
-Version: 1.0.4
+Version: 1.0.5
 License: MIT
 """
 
@@ -3460,7 +3460,7 @@ class ComposioService:
             "status": "healthy",
             "timestamp": datetime.now(UTC).isoformat(),
             "components": {},
-            "version": "1.0.4",
+            "version": "1.0.5",
         }
 
         try:
@@ -3567,7 +3567,7 @@ class ComposioService:
         """
         return {
             "service_type": "ComposioService",
-            "version": "1.0.4",
+            "version": "1.0.5",
             "llm_model": getattr(self._llm, "model_name", "unknown"),
             "auth_configs_count": len(self._composio_config.get_auth_config_ids()),
             "tool_configs_count": len(self._composio_config.tool_configs or []),
@@ -3620,7 +3620,7 @@ class ComposioService:
 
 
 # Version information
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 __author__ = "Tejus Gupta <tejus3131@gmail.com>"
 __license__ = "MIT"
 

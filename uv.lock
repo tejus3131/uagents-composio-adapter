@@ -2743,7 +2743,7 @@ wheels = [
 
 [[package]]
 name = "uagents"
-version = "0.22.9"
+version = "0.22.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -2752,9 +2752,9 @@ dependencies = [
     { name = "uagents-core" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/03/a6/c47aafccab44f274b301bd205d94e88eb6e3680e7564c1df2dcb26b6ea33/uagents-0.22.9.tar.gz", hash = "sha256:b6c0f2823b944a72004fe9dfeee4f0ee63138303cf4102919d8b603b9d657a0f", size = 64786, upload-time = "2025-09-24T08:59:13.314Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/45/09b69cffee3ea07b731ad2f90d4e23f4d0bc3853ee8c09c3eb9cb7a570fb/uagents-0.22.10.tar.gz", hash = "sha256:44f076ed1b5a46313eaa6c2746a3a5f0f0985b77d25555d6b7af070ea816378d", size = 64773, upload-time = "2025-10-06T12:40:31.172Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/18/7fb4ae638b3df37978d39adcf7dce5fd705c38f86a84e82a2c49f04c5f98/uagents-0.22.9-py3-none-any.whl", hash = "sha256:bc67dd4cf22184648c094968cba53b82bdd03f0b517c5258b00b40cca943da94", size = 74314, upload-time = "2025-09-24T08:59:11.915Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/05/807307f3a2e741676eb7b77b279148b1698c6f3defb351f2dfb452b56e34/uagents-0.22.10-py3-none-any.whl", hash = "sha256:02888953bb9728f761fa946fb48b41f2c8f6e8945f4db003be30e8ef0969de74", size = 74316, upload-time = "2025-10-06T12:40:30.128Z" },
 ]
 
 [[package]]
@@ -2809,13 +2809,13 @@ requires-dist = [
     { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.1.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=6.2.0" },
-    { name = "uagents", specifier = ">=0.22.9" },
+    { name = "uagents", specifier = ">=0.22.10" },
 ]
 provides-extras = ["dev"]
 
 [[package]]
 name = "uagents-core"
-version = "0.3.9"
+version = "0.3.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bech32" },
@@ -2823,9 +2823,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/e7/59c075ae0e1d10da7224298b4927fc8fde5d2913540a68e1a67c83dd9d3a/uagents_core-0.3.9.tar.gz", hash = "sha256:e97afda7307a73b702a2864a4640a8c3b6ebaa8c45d4159c83cd30197a3a6353", size = 18213, upload-time = "2025-09-24T08:42:06.382Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/a2/6810d9815c237b7dc4e4ce42074bca1f4fd994bf3f389586a0121070b2d6/uagents_core-0.3.11.tar.gz", hash = "sha256:320e5590510447be308c6b247dcae2a559984cf85f692cdcbfa8e71d556b3933", size = 19032, upload-time = "2025-10-09T12:54:57.306Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/59/56b911499b01c35e1e9e425cced62360f29b696af9b4eb2c99b0a130f2b5/uagents_core-0.3.9-py3-none-any.whl", hash = "sha256:b70ac4a8530f887e8d3fc5d2b6edd8598a6bed05ed48c90d57862e2861498a52", size = 25734, upload-time = "2025-09-24T08:42:05.238Z" },
+    { url = "https://files.pythonhosted.org/packages/34/6d/6c57089918da93f7c5b9899019d0f2d9fbc1f568424270f0400ce3a0804e/uagents_core-0.3.11-py3-none-any.whl", hash = "sha256:358fc1545f1dbd26a5701788fd734f0d9564a5a2263e01129c103ac903ffa891", size = 26662, upload-time = "2025-10-09T12:54:56.543Z" },
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 [project]
 name = "uagents-composio-adapter"
-version = "1.0.5"
+version = "1.0.6"
 description = "Production-ready Composio integration module for uAgents framework with LangChain-based AI agents"
 readme = "README.md"
 license = { text = "MIT" }

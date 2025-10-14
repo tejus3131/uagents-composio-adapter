@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2025-10-14
+
+### Fixed
+- **🔧 Modifier System**: Fixed modifier setup methods and improved type safety
+  - Updated modifier type aliases for better clarity:
+    - `SchemaModifierFunc` → `SchemaModifier`
+    - `BeforeExecuteModifierFunc` → `BeforeExecute`
+    - `AfterExecuteModifierFunc` → `AfterExecute`
+  - Simplified module imports by removing conditional try-catch blocks for composio decorator imports
+  - Enhanced type hints and added new tool-related types: `Tool`, `ToolExecuteParams`, `ToolExecutionResponse`
+
+### Changed
+- **📊 Enhanced Logging**: Upgraded logging levels from debug to info for better visibility of important operations:
+  - Connection status checks
+  - Tool retrieval operations
+  - Memory configuration setup
+  - Query processing stages
+  - Chat acknowledgements and message processing
+- **📦 Project Metadata**: Added comprehensive project classifiers to `pyproject.toml`:
+  - Development status, intended audience, license
+  - Operating system and Python version compatibility
+  - Topic classification for better package discovery
+- **🧹 Module Organization**: Streamlined `__init__.py` exports with consistent naming and better categorization
+
+### Updated
+- **📦 Dependency Updates**: Updated project dependencies via lock file refresh
+  - Various dependency version bumps for security and performance improvements
+
+### Technical Details
+- Improved protocol type hints with `AgentChatProtocol` for better type safety
+- Enhanced `__all__` exports with proper categorization of classes, exceptions, and types
+- Better separation of tool-related types from modifier types in public API
+
 ## [1.0.6] - 2025-10-09
 
 ### Fixed

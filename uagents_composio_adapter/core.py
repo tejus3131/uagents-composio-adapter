@@ -1500,7 +1500,7 @@ class ComposioClient:
                     link_params["callback_url"] = callback_url
 
                 connection_request = await asyncio.to_thread(
-                    self._composio.connected_accounts.initiate, link_params
+                    self._composio.connected_accounts.initiate, **link_params
                 )
 
             if not connection_request.redirect_url:
@@ -1791,7 +1791,7 @@ class ComposioClient:
                             f"Retrieving tools with parameters with param: {params}",
                         )
 
-                        return self._composio.tools.get(params)
+                        return self._composio.tools.get(**params)
 
                     try:
                         retrieved_tools = await asyncio.to_thread(get_tools_for_config)
@@ -2062,7 +2062,7 @@ class PostgresMemoryConfig(BaseModel):
         try:
             # Create the pool without opening it in the constructor
             pool = AsyncConnectionPool(
-                conninfo=f"postgres://{self.user}:{self.password}"
+                conninfo=f"postgres://{self.user}:{self.password.get_secret_value()}"
                 f"@{self.host}:{self.port}/{self.database}"
                 f"?sslmode={self.sslmode}",
                 max_size=self.max_size,
@@ -3009,7 +3009,7 @@ class ComposioService:
                     f"Agent {agent_name} configured with memory checkpointer"
                 )
 
-            agent = create_agent({k: v for k, v in config.items() if v is not None})
+            agent = create_agent(**{k: v for k, v in config.items() if v is not None})
 
             @tool(
                 agent_name.lower().replace(" ", "_") + "_agent",
@@ -3137,7 +3137,7 @@ class ComposioService:
             orchestrator_config["checkpointer"] = memory
 
         orchestrator_agent = create_agent(
-            {k: v for k, v in orchestrator_config.items() if v is not None}
+            **{k: v for k, v in orchestrator_config.items() if v is not None}
         )
 
         ctx.logger.info(

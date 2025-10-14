@@ -24,7 +24,7 @@ Key Features:
     - Thread-safe operations with proper resource management and connection pooling
 
 Author: Tejus Gupta <tejus3131@gmail.com>
-Version: 1.0.7
+Version: 1.0.8
 License: MIT
 """
 

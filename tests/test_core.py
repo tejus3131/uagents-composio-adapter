@@ -23,7 +23,7 @@ from uagents_composio_adapter import (
 
 def test_version() -> None:
     """Test that version is properly defined."""
-    assert __version__ == "1.0.7"
+    assert __version__ == "1.0.8"
 
 
 def test_tool_config_from_tools() -> None:

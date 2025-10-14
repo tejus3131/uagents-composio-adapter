@@ -8,7 +8,8 @@ customization, and enhanced tool configuration features.
 
 from typing import Any
 
-import pytest
+import pytest  # type: ignore
+from pydantic import SecretStr
 
 from uagents_composio_adapter import (
     ComposioConfig,
@@ -101,14 +102,14 @@ def test_postgres_memory_config() -> None:
         port=5432,
         database="test_db",
         user="test_user",
-        password="test_password",
+        password=SecretStr("test_password"),
     )
 
     assert config.host == "localhost"
     assert config.port == 5432
     assert config.database == "test_db"
     assert config.user == "test_user"
-    assert config.password == "test_password"
+    assert config.password.get_secret_value() == "test_password"
 
 
 def test_modifiers_creation() -> None:
@@ -120,14 +121,37 @@ def test_modifiers_creation() -> None:
     ):
         Modifiers()
 
-    # Test with schema functions
+    # Test with schema functions using new dict syntax
     def dummy_schema_modifier(tool: str, toolkit: str, schema: Any) -> Any:
         return schema
 
-    modifiers = Modifiers.with_schema(dummy_schema_modifier)
-    assert modifiers.schema_functions == [dummy_schema_modifier]
-    assert modifiers.before_execute_functions is None
-    assert modifiers.after_execute_functions is None
+    modifiers = Modifiers.with_schema({dummy_schema_modifier: ["TOOL1", "TOOL2"]})
+    assert dummy_schema_modifier in modifiers.schema_functions
+    assert modifiers.schema_functions[dummy_schema_modifier] == ["TOOL1", "TOOL2"]
+    assert modifiers.before_execute_functions == {}
+    assert modifiers.after_execute_functions == {}
+
+    # Test combine method with new dict syntax
+    def dummy_before_execute(tool: str, toolkit: str, params: Any) -> Any:
+        return params
+
+    def dummy_after_execute(tool: str, toolkit: str, response: Any) -> Any:
+        return response
+
+    combined = Modifiers.combine(
+        schema_functions={dummy_schema_modifier: ["GITHUB_LIST_ISSUES"]},
+        before_execute_functions={dummy_before_execute: ["SLACK_SEND_MESSAGE"]},
+        after_execute_functions={dummy_after_execute: ["GMAIL_SEND_EMAIL"]},
+    )
+
+    assert dummy_schema_modifier in combined.schema_functions
+    assert dummy_before_execute in combined.before_execute_functions
+    assert dummy_after_execute in combined.after_execute_functions
+    assert combined.schema_functions[dummy_schema_modifier] == ["GITHUB_LIST_ISSUES"]
+    assert combined.before_execute_functions[dummy_before_execute] == [
+        "SLACK_SEND_MESSAGE"
+    ]
+    assert combined.after_execute_functions[dummy_after_execute] == ["GMAIL_SEND_EMAIL"]
 
 
 def test_composio_error() -> None:
@@ -152,12 +176,12 @@ def test_composio_config_persona_prompt() -> None:
 
     # Test with persona prompt
     config = ComposioConfig(
-        api_key="test_api_key_123",
+        api_key=SecretStr("test_api_key_123"),
         tool_configs=[tool_config],
         persona_prompt="You are a helpful AI assistant specializing in GitHub operations.",
     )
 
-    assert config.api_key == "test_api_key_123"
+    assert config.api_key.get_secret_value() == "test_api_key_123"
     assert config.tool_configs is not None
     assert len(config.tool_configs) == 1
     assert (
@@ -168,7 +192,7 @@ def test_composio_config_persona_prompt() -> None:
 
     # Test without persona prompt
     config_no_persona = ComposioConfig(
-        api_key="test_api_key_456",
+        api_key=SecretStr("test_api_key_456"),
         tool_configs=[tool_config],
     )
 
@@ -186,14 +210,14 @@ def test_composio_config_validation() -> None:
     # Test empty API key validation
     with pytest.raises(ValueError, match="api_key cannot be empty"):
         ComposioConfig(
-            api_key="",
+            api_key=SecretStr(""),
             tool_configs=[tool_config],
         )
 
     # Test invalid timeout
     with pytest.raises(ValueError, match="timeout must be a positive integer"):
         ComposioConfig(
-            api_key="valid_key",
+            api_key=SecretStr("valid_key"),
             tool_configs=[tool_config],
             timeout=0,
         )
@@ -201,7 +225,7 @@ def test_composio_config_validation() -> None:
     # Test empty tool_configs
     with pytest.raises(ValueError, match="tool_configs must be provided and non-empty"):
         ComposioConfig(
-            api_key="valid_key",
+            api_key=SecretStr("valid_key"),
             tool_configs=[],
         )
 

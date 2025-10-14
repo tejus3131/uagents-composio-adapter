@@ -24,26 +24,45 @@ Key Features:
 Architecture:
     The system implements a hierarchical multi-agent architecture:
 
-    1. **Orchestrator Agent**: Main decision-making agent that analyzes user requests
+    1. Orchestrator Agent: Main decision-making agent that analyzes user requests
        and routes them to the most appropriate specialized agent
 
-    2. **Specialized Agents**: Domain-specific agents (e.g., GitHub Agent, Email Agent)
-       that handle specific tool categories with optimized prompts and capabilities
+    2. Specialized Agents: Domain-specific agents created dynamically based on
+       configured tool groups, each handling specific tool categories with optimized
+       prompts and capabilities
 
-    3. **Tool Management**: Intelligent grouping and organization of Composio tools
+    3. Tool Management: Intelligent grouping and organization of Composio tools
        into logical categories for efficient agent specialization
 
 Usage:
     ```python
     import asyncio
-    from uagents_composio_adapter import ComposioService, ComposioConfig, ToolConfig
+    from uagents_composio_adapter import (
+        ComposioService, ComposioConfig, ToolConfig, Modifiers, ToolExecutionResponse
+    )
 
     async def main():
+        # Define custom modifier functions
+        def show_data_loaded(
+            tool: str, toolkit: str, response: ToolExecutionResponse
+        ) -> ToolExecutionResponse:
+            print(f"[Data Loaded] Tool: {tool}, Response: {response}")
+            return response
+
         # Configure multiple tool groups for specialized agents
         tool_configs = [
             ToolConfig.from_toolkit("GitHub Tools", "auth_123", "GITHUB", limit=5),
             ToolConfig.from_toolkit("Email Tools", "auth_456", "GMAIL", limit=3),
-            ToolConfig.from_toolkit("Calendar Tools", "auth_789", "GOOGLECALENDAR", limit=4)
+            ToolConfig.from_toolkit(
+                "LinkedIn Tools",
+                "auth_789",
+                "LINKEDIN",
+                modifiers=Modifiers.combine(
+                    after_execute_functions={
+                        show_data_loaded: ["LINKEDIN_GET_MY_INFO"]
+                    }
+                )
+            )
         ]
 
         # Create configuration with persona customization
@@ -70,12 +89,13 @@ License: MIT
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import sys
 from collections.abc import AsyncGenerator, Callable
 from datetime import datetime, timezone
-from typing import Any, Final
+from typing import Any, Final, Protocol, runtime_checkable
 from uuid import uuid4
 
 from composio import Composio, after_execute, before_execute, schema_modifier
@@ -92,7 +112,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
-from uagents import Context, Protocol
+from uagents import Context
+from uagents import Protocol as AgentChatProtocol
 from uagents_core.contrib.protocols.chat import (
     AgentContent,
     ChatAcknowledgement,
@@ -110,7 +131,7 @@ if sys.version_info >= (3, 11):
 else:
     UTC = timezone.utc
 
-from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 # Type definitions for better code clarity
 UserId = str
@@ -127,12 +148,107 @@ MAX_TOOLS_LIMIT: Final[int] = 100
 logger = logging.getLogger(__name__)
 
 
-# Type aliases for modifier functions
-SchemaModifierFunc = Callable[[str, str, Tool], Tool]
-BeforeExecuteModifierFunc = Callable[[str, str, ToolExecuteParams], ToolExecuteParams]
-AfterExecuteModifierFunc = Callable[
-    [str, str, ToolExecutionResponse], ToolExecutionResponse
-]
+# Protocol definitions that match the decorator expectations
+def describe_modifier_type(modifier_type: type) -> None:
+    """
+    Display expected signature and documentation for a given modifier Protocol.
+    Helpful when writing new modifiers.
+
+    Example:
+        >>> from composio.modifiers import describe_modifier_type, SchemaModifier
+        >>> describe_modifier_type(SchemaModifier)
+    """
+    print(f"\n=== {modifier_type.__name__} ===")
+    print(modifier_type.__doc__ or "No documentation available.")
+    sig = inspect.signature(modifier_type.__call__)
+    print(f"\nExpected Signature:\n{sig}\n")
+
+
+@runtime_checkable
+class SchemaModifier(Protocol):
+    """
+    A function that modifies a tool's schema before it is exposed to the agent.
+
+    Expected Signature:
+        ```python
+        def function(tool: str, toolkit: str, schema: Tool) -> Tool
+        ```
+
+    Args:
+        - tool (`str`): Name of the tool being modified
+        - toolkit (`str`): Name of the toolkit the tool belongs to
+        - schema (`Tool`): The tool schema to modify
+
+    Returns:
+        - Modified `Tool` instance
+
+    Example:
+        ```python
+        def add_default_repo(tool, toolkit, schema):
+            schema.description += " Uses 'composio/composio' as default repo."
+            return schema
+        ```
+    """
+
+    def __call__(self, tool: str, toolkit: str, schema: Any) -> Any: ...
+
+
+@runtime_checkable
+class BeforeExecute(Protocol):
+    """
+    A function that modifies tool parameters before execution.
+
+    Expected Signature:
+        ```python
+        def function(tool: str, toolkit: str, params: ToolExecuteParams) -> ToolExecuteParams
+        ```
+
+    Args:
+        - tool (`str`): Tool name being executed
+        - toolkit (`str`): Toolkit name
+        - params (`ToolExecuteParams`): Parameters to modify before execution
+
+    Returns:
+        - Modified `ToolExecuteParams`
+
+    Example:
+        ```python
+        def limit_posts(tool, toolkit, params):
+            params["arguments"]["size"] = min(params["arguments"].get("size", 10), 5)
+            return params
+        ```
+    """
+
+    def __call__(self, tool: str, toolkit: str, params: Any) -> Any: ...
+
+
+@runtime_checkable
+class AfterExecute(Protocol):
+    """
+    A function that transforms tool output after execution.
+
+    Expected Signature:
+        ```python
+        def function(tool: str, toolkit: str, response: ToolExecutionResponse) -> ToolExecutionResponse
+        ```
+
+    Args:
+        - tool (`str`): Tool name executed
+        - toolkit (`str`): Toolkit name
+        - response (`ToolExecutionResponse`): Raw tool output to modify
+
+    Returns:
+        - Modified `ToolExecutionResponse`
+
+    Example:
+        ```python
+        def show_response(tool, toolkit, response):
+            print(f"Response from {tool}: {response}")
+            return response
+        ```
+    """
+
+    def __call__(self, tool: str, toolkit: str, response: Any) -> Any: ...
 
 
 class Modifiers(BaseModel):
@@ -154,39 +270,45 @@ class Modifiers(BaseModel):
 
     Example:
         ```python
-        # Create schema modifier to add default repository
-        @schema_modifier(tools=["GITHUB_LIST_ISSUES"])
+        # Create schema modifier function
         def add_default_repo(tool: str, toolkit: str, schema: Tool) -> Tool:
             schema.description += " Uses 'composio/composio' as default repo."
             return schema
 
-        # Create before-execute modifier to inject parameters
-        @before_execute(tools=["HACKERNEWS_GET_POSTS"])
+        # Create before-execute modifier function
         def limit_posts(tool: str, toolkit: str, params: ToolExecuteParams) -> ToolExecuteParams:
             params["arguments"]["size"] = min(params["arguments"].get("size", 10), 5)
             return params
 
-        # Combine modifiers
+        # Create after-execute modifier function
+        def show_loaded_data(tool: str, toolkit: str, response: ToolExecutionResponse) -> ToolExecutionResponse:
+            print(f"Tool: {tool}, Response: {response}")
+            return response
+
+        # Combine modifiers with function-to-tools mapping
         modifiers = Modifiers.combine(
-            schema_functions=[add_default_repo],
-            before_execute_functions=[limit_posts]
+            schema_functions={add_default_repo: ["GITHUB_LIST_ISSUES"]},
+            before_execute_functions={limit_posts: ["HACKERNEWS_GET_POSTS"]},
+            after_execute_functions={show_loaded_data: ["LINKEDIN_GET_MY_INFO"]}
         )
         ```
 
     Attributes:
-        schema_functions: Functions that modify tool schemas before agent interaction
-        before_execute_functions: Functions that modify parameters before execution
-        after_execute_functions: Functions that transform results after execution
+        schema_functions: Dictionary mapping schema modifier functions to list of tool names
+        before_execute_functions: Dictionary mapping before-execute modifier functions to list of tool names
+        after_execute_functions: Dictionary mapping after-execute modifier functions to list of tool names
     """
 
-    schema_functions: list[SchemaModifierFunc] | None = None
-    """Functions that modify tool schemas before agent interaction. Used for adding/removing parameters, modifying descriptions, or setting defaults."""
+    schema_functions: dict[SchemaModifier, list[str]] = Field(default_factory=dict)
+    """Dictionary mapping schema modifier functions to list of tool names they should be applied to."""
 
-    before_execute_functions: list[BeforeExecuteModifierFunc] | None = None
-    """Functions that modify parameters before tool execution. Used for injecting parameters, overriding values, or validation."""
+    before_execute_functions: dict[BeforeExecute, list[str]] = Field(
+        default_factory=dict
+    )
+    """Dictionary mapping before-execute modifier functions to list of tool names they should be applied to."""
 
-    after_execute_functions: list[AfterExecuteModifierFunc] | None = None
-    """Functions that transform results after tool execution. Used for filtering output, format conversion, or truncation."""
+    after_execute_functions: dict[AfterExecute, list[str]] = Field(default_factory=dict)
+    """Dictionary mapping after-execute modifier functions to list of tool names they should be applied to."""
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,  # Allow function types
@@ -207,12 +329,12 @@ class Modifiers(BaseModel):
         return self
 
     @classmethod
-    def with_schema(cls, *modifiers: SchemaModifierFunc) -> Modifiers:
+    def with_schema(cls, modifiers: dict[SchemaModifier, list[str]]) -> Modifiers:
         """
         Create modifiers with schema modifiers only.
 
         Args:
-            *modifiers: Variable number of schema modifier functions
+            modifiers: Dictionary of schema modifier functions
 
         Returns:
             Modifiers instance with only schema functions configured
@@ -222,15 +344,17 @@ class Modifiers(BaseModel):
         """
         if not modifiers:
             raise ValueError("At least one schema modifier must be provided")
-        return cls(schema_functions=list(modifiers))
+        return cls(schema_functions=modifiers)
 
     @classmethod
-    def with_before_execute(cls, *modifiers: BeforeExecuteModifierFunc) -> Modifiers:
+    def with_before_execute(
+        cls, modifiers: dict[BeforeExecute, list[str]]
+    ) -> Modifiers:
         """
         Create modifiers with before-execute modifiers only.
 
         Args:
-            *modifiers: Variable number of before-execute modifier functions
+            modifiers: Dictionary of before-execute modifier functions
 
         Returns:
             Modifiers instance with only before-execute functions configured
@@ -240,15 +364,15 @@ class Modifiers(BaseModel):
         """
         if not modifiers:
             raise ValueError("At least one before-execute modifier must be provided")
-        return cls(before_execute_functions=list(modifiers))
+        return cls(before_execute_functions=modifiers)
 
     @classmethod
-    def with_after_execute(cls, *modifiers: AfterExecuteModifierFunc) -> Modifiers:
+    def with_after_execute(cls, modifiers: dict[AfterExecute, list[str]]) -> Modifiers:
         """
         Create modifiers with after-execute modifiers only.
 
         Args:
-            *modifiers: Variable number of after-execute modifier functions
+            modifiers: Dictionary of after-execute modifier functions
 
         Returns:
             Modifiers instance with only after-execute functions configured
@@ -258,22 +382,22 @@ class Modifiers(BaseModel):
         """
         if not modifiers:
             raise ValueError("At least one after-execute modifier must be provided")
-        return cls(after_execute_functions=list(modifiers))
+        return cls(after_execute_functions=modifiers)
 
     @classmethod
     def combine(
         cls,
-        schema_functions: list[SchemaModifierFunc] | None = None,
-        before_execute_functions: list[BeforeExecuteModifierFunc] | None = None,
-        after_execute_functions: list[AfterExecuteModifierFunc] | None = None,
+        schema_functions: dict[SchemaModifier, list[str]] | None = None,
+        before_execute_functions: dict[BeforeExecute, list[str]] | None = None,
+        after_execute_functions: dict[AfterExecute, list[str]] | None = None,
     ) -> Modifiers:
         """
         Create modifiers with multiple types.
 
         Args:
-            schema_functions: Optional list of schema modifier functions
-            before_execute_functions: Optional list of before-execute modifier functions
-            after_execute_functions: Optional list of after-execute modifier functions
+            schema_functions: Optional dictionary of schema modifier functions
+            before_execute_functions: Optional dictionary of before-execute modifier functions
+            after_execute_functions: Optional dictionary of after-execute modifier functions
 
         Returns:
             Modifiers instance with specified function types configured
@@ -282,33 +406,56 @@ class Modifiers(BaseModel):
             ValueError: If no modifier functions provided
         """
         return cls(
-            schema_functions=schema_functions,
-            before_execute_functions=before_execute_functions,
-            after_execute_functions=after_execute_functions,
+            schema_functions=schema_functions or {},
+            before_execute_functions=before_execute_functions or {},
+            after_execute_functions=after_execute_functions or {},
         )
 
     def to_list(
         self,
-    ) -> list[
-        SchemaModifierFunc | BeforeExecuteModifierFunc | AfterExecuteModifierFunc
-    ]:
+        tools: list[str] | None = None,
+        toolkits: list[str] | None = None,
+    ) -> list[Any]:
         """
         Convert to flat list for composio.tools.get() modifiers parameter.
+
+        Args:
+            tools: List of tool slugs to apply modifiers to
+            toolkits: List of toolkit names to apply modifiers to
 
         Returns:
             Flattened list of all modifier functions in execution order
         """
-        modifiers: list[
-            SchemaModifierFunc | BeforeExecuteModifierFunc | AfterExecuteModifierFunc
-        ] = []
+        modifiers: list[Any] = []
+        logger.info(f"Generating modifiers for tools: {tools}, toolkits: {toolkits}")
 
-        # Add in execution order: schema -> before_execute -> after_execute
         if self.schema_functions:
-            modifiers.extend(self.schema_functions)
+            logger.info(f"Setting up {len(self.schema_functions)} schema modifiers")
+            for schema_modifier_func, tools in self.schema_functions.items():
+                modifier = schema_modifier(tools=tools)(schema_modifier_func)
+                modifiers.append(modifier)
+
         if self.before_execute_functions:
-            modifiers.extend(self.before_execute_functions)
+            logger.info(
+                f"Setting up {len(self.before_execute_functions)} before-execute modifiers"
+            )
+            for before_execute_func, tools in self.before_execute_functions.items():
+                modifier = before_execute(tools=tools)(before_execute_func)
+                modifiers.append(modifier)
+
         if self.after_execute_functions:
-            modifiers.extend(self.after_execute_functions)
+            logger.info(
+                f"Setting up {len(self.after_execute_functions)} after-execute modifiers"
+            )
+            for after_execute_func, tools in self.after_execute_functions.items():
+                modifier = after_execute(tools=tools)(after_execute_func)
+                modifiers.append(modifier)
+
+        for mod in modifiers:
+            logger.info(f"{mod.tools=}")
+            logger.info(f"{mod.toolkits=}")
+            logger.info(f"{type(mod.modifier)=}, {mod.modifier=}")
+            logger.info(f"{mod.type=}")
 
         return modifiers
 
@@ -669,7 +816,7 @@ class ToolConfig(BaseModel):
         Raises:
             ValueError: If search query is empty
 
-        Examples:
+        Example:
             ```python
             # Search across all tools
             config = ToolConfig.from_search(
@@ -737,7 +884,7 @@ class ComposioConfig(BaseModel):
         ```
     """
 
-    api_key: str
+    api_key: SecretStr
     """Composio API key for authentication. Get from https://app.composio.dev/settings. Required for all API operations."""
 
     persona_prompt: str | None = None
@@ -762,7 +909,7 @@ class ComposioConfig(BaseModel):
         Raises:
             ValueError: If configuration is invalid
         """
-        if not self.api_key or not self.api_key.strip():
+        if not self.api_key or not self.api_key.get_secret_value().strip():
             raise ValueError("api_key cannot be empty")
 
         if self.timeout < 1:
@@ -832,7 +979,7 @@ class ComposioConfig(BaseModel):
             ) from e
 
         return cls(
-            api_key=api_key,
+            api_key=SecretStr(api_key),
             tool_configs=tool_configs,
             timeout=timeout,
             persona_prompt=persona_prompt,
@@ -1143,7 +1290,8 @@ class ComposioClient:
         try:
             self._config = config
             self._composio: Composio[LangchainProvider] = Composio(
-                api_key=self._config.api_key, provider=LangchainProvider()
+                api_key=self._config.api_key.get_secret_value(),
+                provider=LangchainProvider(),
             )
             self._lock = asyncio.Lock()
 
@@ -1352,7 +1500,7 @@ class ComposioClient:
                     link_params["callback_url"] = callback_url
 
                 connection_request = await asyncio.to_thread(
-                    self._composio.connected_accounts.initiate, **link_params
+                    self._composio.connected_accounts.initiate, link_params
                 )
 
             if not connection_request.redirect_url:
@@ -1592,7 +1740,7 @@ class ComposioClient:
             config_results: list[dict[str, Any]] = []
 
             for i, config in enumerate(self._config.tool_configs):
-                ctx.logger.debug(
+                ctx.logger.info(
                     f"Processing tool config {i + 1}/{len(self._config.tool_configs)}",
                     extra={
                         "user_id": user_id,
@@ -1634,9 +1782,16 @@ class ComposioClient:
 
                         # Add modifiers if present
                         if current_config.modifiers:
-                            params["modifiers"] = current_config.modifiers.to_list()
+                            params["modifiers"] = current_config.modifiers.to_list(
+                                toolkits=params.get("toolkits"),
+                                tools=params.get("tools"),
+                            )
 
-                        return self._composio.tools.get(**params)
+                        ctx.logger.info(
+                            f"Retrieving tools with parameters with param: {params}",
+                        )
+
+                        return self._composio.tools.get(params)
 
                     try:
                         retrieved_tools = await asyncio.to_thread(get_tools_for_config)
@@ -1658,7 +1813,7 @@ class ComposioClient:
                             }
                         )
 
-                        ctx.logger.debug(
+                        ctx.logger.info(
                             f"Retrieved {tool_count} tools from config {i + 1}",
                             extra={
                                 "user_id": user_id,
@@ -1790,7 +1945,7 @@ class PostgresMemoryConfig(BaseModel):
     user: str
     """Username for database authentication."""
 
-    password: str
+    password: SecretStr
     """Password for database authentication."""
 
     sslmode: str = "prefer"
@@ -1859,7 +2014,7 @@ class PostgresMemoryConfig(BaseModel):
                 port=port,
                 database=database,
                 user=user,
-                password=password,
+                password=SecretStr(password),
                 sslmode=sslmode,
                 max_size=max_size,
                 autocommit=autocommit,
@@ -2116,7 +2271,7 @@ class ComposioService:
         try:
             # Initialize language model client
             self._llm = ChatOpenAI(
-                model=model, api_key=SecretStr(api_key), base_url=base_url, verbose=True
+                model=model, api_key=SecretStr(api_key), base_url=base_url
             )
             logger.info(
                 "Language model client initialized successfully",
@@ -2134,7 +2289,7 @@ class ComposioService:
             logger.info("Composio client initialized successfully")
 
             # Initialize chat protocol
-            self._protocol = Protocol(spec=chat_protocol_spec)
+            self._protocol = AgentChatProtocol(spec=chat_protocol_spec)
             logger.info("Chat protocol initialized successfully")
 
         except Exception as e:
@@ -2174,7 +2329,7 @@ class ComposioService:
             Exception: If message sending fails (logged but not re-raised)
         """
         try:
-            ctx.logger.debug(
+            ctx.logger.info(
                 "Sending chat message",
                 extra={
                     "sender": sender,
@@ -2188,7 +2343,7 @@ class ComposioService:
 
             if end_session:
                 content.append(EndSessionContent(type="end-session"))
-                ctx.logger.debug("Added end-session signal to message")
+                ctx.logger.info("Added end-session signal to message")
 
             await ctx.send(
                 sender,
@@ -2199,7 +2354,7 @@ class ComposioService:
                 ),
             )
 
-            ctx.logger.debug(
+            ctx.logger.info(
                 "Chat message sent successfully",
                 extra={"sender": sender, "message_length": len(text)},
             )
@@ -2259,7 +2414,7 @@ class ComposioService:
                 user_id, auth_config_id, ctx
             )
 
-            ctx.logger.debug(
+            ctx.logger.info(
                 "Authentication request created",
                 extra={
                     "user_id": user_id,
@@ -2296,7 +2451,7 @@ class ComposioService:
                 yield f"To connect with {tool_group_name}, please authenticate by [clicking here]({auth_response.redirect_url})..."
 
                 # Wait for user to complete authentication
-                ctx.logger.debug(
+                ctx.logger.info(
                     "Waiting for user to complete authentication",
                     extra={"user_id": user_id, "auth_config_id": auth_config_id},
                 )
@@ -2403,7 +2558,7 @@ class ComposioService:
             # Check if user has an active connection
             status = await self._client.connection_exists(user_id, ctx)
 
-            ctx.logger.debug(
+            ctx.logger.info(
                 "Connection status retrieved",
                 extra={
                     "user_id": user_id,
@@ -2441,7 +2596,7 @@ class ComposioService:
 
                 # Authenticate each missing connection
                 for auth_config_id in status.connections_required:
-                    ctx.logger.debug(
+                    ctx.logger.info(
                         "Starting authentication for missing connection",
                         extra={"user_id": user_id, "auth_config_id": auth_config_id},
                     )
@@ -2451,7 +2606,7 @@ class ComposioService:
                         yield auth_msg
 
                 # Re-check connections after authentication attempts
-                ctx.logger.debug(
+                ctx.logger.info(
                     "Re-checking connections after authentication attempts",
                     extra={"user_id": user_id},
                 )
@@ -2509,7 +2664,7 @@ class ComposioService:
             if "messages" not in state or not isinstance(state["messages"], list):
                 return {}
 
-            messages = state["messages"]
+            messages: list[BaseMessage] = state["messages"]
             safe_token_count = max_tokens
             agent_prompt_tokens = 0
 
@@ -2543,7 +2698,7 @@ class ComposioService:
                 current_max = int(current_max / overage_ratio * 0.8)
 
                 if iteration == max_iterations - 1:
-                    result_messages = []
+                    result_messages: list[BaseMessage] = []
                     token_count = agent_prompt_tokens
 
                     for msg in reversed(trimmed_messages):
@@ -2591,13 +2746,11 @@ class ComposioService:
             input_messages = {"messages": [HumanMessage(content=query)]}
             config = {"configurable": {"thread_id": session_id}}
 
-            # Use ainvoke for a single, final result
             final_state = await agent.ainvoke(
                 input_messages,
                 config,
             )
 
-            # The final answer is typically the content of the last message in the state
             final_message = final_state.get("messages", [])[-1]
             response_content = getattr(final_message, "content", None)
             final_response = (
@@ -2640,20 +2793,13 @@ class ComposioService:
         Returns:
             A dictionary with 'function' key containing name, description, and parameters
         """
-        # Get the JSON schema from the tool's args_schema
-        if tool.args_schema is None:
-            schema = {}
-        elif hasattr(tool.args_schema, "model_json_schema"):
-            # If it's a Pydantic model class, get the schema
+        if hasattr(tool.args_schema, "model_json_schema"):
             schema = tool.args_schema.model_json_schema()
         elif hasattr(tool.args_schema, "model_dump"):
-            # If it's a Pydantic model instance, dump it
             schema = tool.args_schema.model_dump()
         else:
-            # If args_schema is already a dict, use it directly
             schema = tool.args_schema if isinstance(tool.args_schema, dict) else {}
 
-        # Extract properties and required fields
         properties = schema.get("properties", {})
         required = schema.get("required", [])
         defs = schema.get("$defs", {})
@@ -2678,17 +2824,17 @@ class ComposioService:
         their descriptions, parameters, and required inputs.
         """
         tools_prompt = f"## {agent_name} Agent Tool Definitions\n"
-        tools_prompt += f"You are the **{agent_name} Agent**. Your task is to process user requests by invoking the appropriate tools.\n\n"
+        tools_prompt += f"You are the {agent_name} Agent. Your task is to process user requests by invoking the appropriate tools.\n\n"
 
-        tools_prompt += """**IMPORTANT GUIDELINES:**
+        tools_prompt += """IMPORTANT GUIDELINES:
 
-    1. **Check Relevant Data First**: You may receive a 'relevant_data' dictionary containing information from other agents or previous steps. Always examine this data before calling tools - it may contain exactly what you need.
+    1. Check Relevant Data First: You may receive a 'relevant_data' dictionary containing information from other agents or previous steps. Always examine this data before calling tools - it may contain exactly what you need.
 
-    2. **Use Relevant Data**: If relevant_data contains the information needed for your task, use it directly in your tool calls rather than fetching it again.
+    2. Use Relevant Data: If relevant_data contains the information needed for your task, use it directly in your tool calls rather than fetching it again.
 
-    3. **Single Tool Call**: Generate only ONE function call per turn based on the task description and available tools.
+    3. Single Tool Call: Generate only ONE function call per turn based on the task description and available tools.
 
-    4. **Error Handling**: If any error occurs during tool execution, respond with a clear error message and do not attempt to call another tool.
+    4. Error Handling: If any error occurs during tool execution, respond with a clear error message and do not attempt to call another tool.
 
     ---
 
@@ -2703,9 +2849,9 @@ class ComposioService:
             required_params = parameters.get("required", [])
             properties = parameters.get("properties", {})
 
-            tools_prompt += f"\n### Tool: **{name}**\n"
-            tools_prompt += f"**Description:** {description}\n"
-            tools_prompt += "**Parameters:**\n"
+            tools_prompt += f"\n### Tool: {name}\n"
+            tools_prompt += f"Description: {description}\n"
+            tools_prompt += "Parameters:\n"
 
             if not properties:
                 tools_prompt += "- *None*\n"
@@ -2719,21 +2865,21 @@ class ComposioService:
                 )
 
                 tools_prompt += (
-                    f"- **{prop_name}** ({param_type}, {is_required}): {param_desc}"
+                    f"- {prop_name} ({param_type}, {is_required}): {param_desc}"
                 )
 
                 if param_type == "object" and "properties" in prop_data:
-                    tools_prompt += "\n  - **Nested Properties:** " + ", ".join(
+                    tools_prompt += "\n  - Nested Properties: " + ", ".join(
                         prop_data["properties"].keys()
                     )
 
                 if "enum" in prop_data:
                     allowed_values = ", ".join([f"`{v}`" for v in prop_data["enum"]])
-                    tools_prompt += f" **Allowed Values:** {allowed_values}"
+                    tools_prompt += f" Allowed Values: {allowed_values}"
 
                 tools_prompt += "\n"
 
-        tools_prompt += "\n---\n**Remember**: Check relevant_data first, then use tools to complete the task.\n"
+        tools_prompt += "\n---\nRemember: Check relevant_data first, then use tools to complete the task.\n"
 
         return tools_prompt
 
@@ -2746,10 +2892,10 @@ class ComposioService:
         agents are available and the primary functions they manage.
         """
         orchestrator_prompt = "## Orchestrator Agent: Available Tool Agents\n"
-        orchestrator_prompt += "You are the **Orchestrator Agent**. Your primary role is to determine which specialized agent can best handle the user's request and coordinate multi-step tasks.\n\n"
+        orchestrator_prompt += "You are the Orchestrator Agent. Your primary role is to determine which specialized agent can best handle the user's request and coordinate multi-step tasks.\n\n"
 
         orchestrator_prompt += (
-            "**You can invoke any of the following specialized agents:**\n"
+            "You can invoke any of the following specialized agents:\n"
         )
         orchestrator_prompt += "---\n"
 
@@ -2765,38 +2911,38 @@ class ComposioService:
 
                 tool_summaries.append(f"`{name}`: {snippet}")
 
-            orchestrator_prompt += f"### Agent: **{agent_name}**\n"
+            orchestrator_prompt += f"### Agent: {agent_name}\n"
             orchestrator_prompt += (
-                f"This agent handles tasks related to **{agent_name}**.\n"
+                f"This agent handles tasks related to {agent_name}.\n"
             )
             orchestrator_prompt += (
-                "**Key Capabilities:** " + ", ".join(tool_summaries) + "\n\n"
+                "Key Capabilities: " + ", ".join(tool_summaries) + "\n\n"
             )
 
         orchestrator_prompt += """---
 
-    **CRITICAL RULES FOR MULTI-STEP TASKS:**
+    CRITICAL RULES FOR MULTI-STEP TASKS:
 
-    1. **Memory Isolation**: Each specialized agent has its own separate memory. They CANNOT see each other's conversation history or data.
+    1. Memory Isolation: Each specialized agent has its own separate memory. They CANNOT see each other's conversation history or data.
 
-    2. **Data Passing**: When a task requires multiple agents in sequence:
+    2. Data Passing: When a task requires multiple agents in sequence:
     - Call the first agent and wait for its response
     - Extract ALL relevant data from the response
     - Pass that data to the next agent via the 'relevant_data' parameter
 
-    3. **Tool Invocation Format**:
+    3. Tool Invocation Format:
     - agent_name(task_description="clear description", relevant_data={"key": "value"})
     - The 'relevant_data' dict should contain any information the agent needs from previous steps
 
-    4. **Sequential Processing**:
+    4. Sequential Processing:
     - For tasks like "fetch X and send it via Y", you must:
         a) Call the agent that fetches X
         b) Extract the fetched data from the response
         c) Call the agent that sends via Y, passing the data in relevant_data
 
-    5. **Single Agent Per Turn**: Invoke only ONE agent per reasoning step. Wait for its response before deciding the next action.
+    5. Single Agent Per Turn: Invoke only ONE agent per reasoning step. Wait for its response before deciding the next action.
 
-    6. **Final Response**: After all agents complete, synthesize their results into a single coherent response that describes what was accomplished.
+    6. Final Response: After all agents complete, synthesize their results into a single coherent response that describes what was accomplished.
 
     """
 
@@ -2859,11 +3005,11 @@ class ComposioService:
 
             if memory:
                 config["checkpointer"] = memory
-                ctx.logger.debug(
+                ctx.logger.info(
                     f"Agent {agent_name} configured with memory checkpointer"
                 )
 
-            agent = create_agent(**{k: v for k, v in config.items() if v is not None})
+            agent = create_agent({k: v for k, v in config.items() if v is not None})
 
             @tool(
                 agent_name.lower().replace(" ", "_") + "_agent",
@@ -2936,7 +3082,7 @@ class ComposioService:
 
         Args:
             agent_tools_map: A dictionary mapping agent names (e.g., 'Gmail Agent')
-                            to their list of **tool definitions (JSON schema)**.
+                            to their list of tool definitions (JSON schema).
             session_id: Unique session identifier for memory context
             ctx: The conversation context for logging and session management
             memory: Optional memory checkpoint for conversation persistence.
@@ -2991,7 +3137,7 @@ class ComposioService:
             orchestrator_config["checkpointer"] = memory
 
         orchestrator_agent = create_agent(
-            **{k: v for k, v in orchestrator_config.items() if v is not None}
+            {k: v for k, v in orchestrator_config.items() if v is not None}
         )
 
         ctx.logger.info(
@@ -3038,7 +3184,7 @@ class ComposioService:
 
         try:
             # Step 1: Check and establish user connections
-            ctx.logger.debug(
+            ctx.logger.info(
                 "Checking user connections",
                 extra={"session_id": session_id, "user_id": user_id},
             )
@@ -3046,7 +3192,7 @@ class ComposioService:
                 yield conn_msg
 
             # Step 2: Retrieve tools for the user
-            ctx.logger.debug(
+            ctx.logger.info(
                 "Retrieving tools for user",
                 extra={"session_id": session_id, "user_id": user_id},
             )
@@ -3066,7 +3212,7 @@ class ComposioService:
 
             # Step 3: Set up memory and create agent
             if self._memory_config:
-                ctx.logger.debug(
+                ctx.logger.info(
                     "Using PostgreSQL memory configuration",
                     extra={"session_id": session_id, "user_id": user_id},
                 )
@@ -3095,7 +3241,7 @@ class ComposioService:
                     )
 
                     # Step 4: Process the query
-                    ctx.logger.debug(
+                    ctx.logger.info(
                         "Processing query with memory-enabled agent",
                         extra={"session_id": session_id, "user_id": user_id},
                     )
@@ -3106,7 +3252,7 @@ class ComposioService:
                     return
 
             else:
-                ctx.logger.debug(
+                ctx.logger.info(
                     "Using stateless agent (no memory)",
                     extra={"session_id": session_id, "user_id": user_id},
                 )
@@ -3119,7 +3265,7 @@ class ComposioService:
                 )
 
                 # Step 4: Process the query
-                ctx.logger.debug(
+                ctx.logger.info(
                     "Processing query with stateless agent",
                     extra={"session_id": session_id, "user_id": user_id},
                 )
@@ -3145,7 +3291,7 @@ class ComposioService:
             return
 
     @property
-    def protocol(self) -> Protocol:
+    def protocol(self) -> AgentChatProtocol:
         """
         Get the configured chat protocol with message handlers.
 
@@ -3176,7 +3322,7 @@ class ComposioService:
         ) -> None:
             """Handle acknowledgement messages from users."""
             try:
-                ctx.logger.debug(
+                ctx.logger.info(
                     "Chat acknowledgement received",
                     extra={
                         "sender": sender,
@@ -3229,7 +3375,7 @@ class ComposioService:
                             timestamp=datetime.now(UTC), acknowledged_msg_id=msg.msg_id
                         ),
                     )
-                    ctx.logger.debug(
+                    ctx.logger.info(
                         "Acknowledgement sent",
                         extra={"sender": sender, "message_id": str(msg.msg_id)},
                     )
@@ -3247,7 +3393,7 @@ class ComposioService:
                 # Process message content
                 for i, item in enumerate(msg.content):
                     try:
-                        ctx.logger.debug(
+                        ctx.logger.info(
                             "Processing message content item",
                             extra={
                                 "sender": sender,
@@ -3543,7 +3689,7 @@ class ComposioService:
         Returns:
             Self for use in async with statement
         """
-        logger.debug("Entering ComposioService async context manager")
+        logger.info("Entering ComposioService async context manager")
         return self
 
     async def __aexit__(
@@ -3560,7 +3706,7 @@ class ComposioService:
             exc_val: Exception instance if an exception was raised
             exc_tb: Exception traceback if an exception was raised
         """
-        logger.debug(
+        logger.info(
             "Exiting ComposioService async context manager",
             extra={
                 "has_exception": exc_type is not None,
@@ -3605,12 +3751,12 @@ __all__ = [
     "ToolSlug",
     "SessionId",
     # Modifier function types
-    "SchemaModifierFunc",
-    "schema_modifier",
-    "BeforeExecuteModifierFunc",
-    "before_execute",
-    "AfterExecuteModifierFunc",
-    "after_execute",
+    "SchemaModifier",
+    "BeforeExecute",
+    "AfterExecute",
+    "Tool",
+    "ToolExecuteParams",
+    "ToolExecutionResponse",
     # Version and metadata
     "__version__",
     "__author__",

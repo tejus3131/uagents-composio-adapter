@@ -29,11 +29,11 @@ License: MIT
 """
 
 from .core import (  # Exceptions; Main classes; Response models; Modifier function types; Type aliases; Version and metadata
-    AfterExecuteModifierFunc,
+    AfterExecute,
     AuthConfigId,
     AuthenticationError,
     AuthResponse,
-    BeforeExecuteModifierFunc,
+    BeforeExecute,
     ComposioConfig,
     ComposioError,
     ComposioService,
@@ -42,9 +42,12 @@ from .core import (  # Exceptions; Main classes; Response models; Modifier funct
     ConnectionStatus,
     Modifiers,
     PostgresMemoryConfig,
-    SchemaModifierFunc,
+    SchemaModifier,
     SessionId,
+    Tool,
     ToolConfig,
+    ToolExecuteParams,
+    ToolExecutionResponse,
     ToolRetrievalError,
     ToolSlug,
     UserId,
@@ -53,73 +56,37 @@ from .core import (  # Exceptions; Main classes; Response models; Modifier funct
     __version__,
 )
 
-# Re-export modifier decorators from composio
-try:
-    from composio import after_execute, before_execute, schema_modifier  # type: ignore
-
-    __all__ = [
-        # Main classes
-        "ComposioService",
-        "ComposioConfig",
-        "ToolConfig",
-        "Modifiers",
-        "PostgresMemoryConfig",
-        # Response models
-        "ConnectionStatus",
-        "AuthResponse",
-        # Exceptions
-        "ComposioError",
-        "AuthenticationError",
-        "ConnectionError",
-        "ConfigurationError",
-        "ToolRetrievalError",
-        # Type aliases
-        "UserId",
-        "AuthConfigId",
-        "ToolSlug",
-        "SessionId",
-        # Modifier function types
-        "SchemaModifierFunc",
-        "BeforeExecuteModifierFunc",
-        "AfterExecuteModifierFunc",
-        # Modifier decorators
-        "schema_modifier",
-        "before_execute",
-        "after_execute",
-        # Version and metadata
-        "__version__",
-        "__author__",
-        "__license__",
-    ]
-except ImportError:
-    # Composio not available - exclude modifier decorators
-    __all__ = [
-        # Main classes
-        "ComposioService",
-        "ComposioConfig",
-        "ToolConfig",
-        "Modifiers",
-        "PostgresMemoryConfig",
-        # Response models
-        "ConnectionStatus",
-        "AuthResponse",
-        # Exceptions
-        "ComposioError",
-        "AuthenticationError",
-        "ConnectionError",
-        "ConfigurationError",
-        "ToolRetrievalError",
-        # Type aliases
-        "UserId",
-        "AuthConfigId",
-        "ToolSlug",
-        "SessionId",
-        # Modifier function types
-        "SchemaModifierFunc",
-        "BeforeExecuteModifierFunc",
-        "AfterExecuteModifierFunc",
-        # Version and metadata
-        "__version__",
-        "__author__",
-        "__license__",
-    ]
+__all__ = [
+    # Main classes
+    "ComposioService",
+    "ComposioConfig",
+    "ToolConfig",
+    "Modifiers",
+    "PostgresMemoryConfig",
+    # Response models
+    "ConnectionStatus",
+    "AuthResponse",
+    # Exceptions
+    "ComposioError",
+    "AuthenticationError",
+    "ConnectionError",
+    "ConfigurationError",
+    "ToolRetrievalError",
+    # Type aliases
+    "UserId",
+    "AuthConfigId",
+    "ToolSlug",
+    "SessionId",
+    # Tool types
+    "Tool",
+    "ToolExecuteParams",
+    "ToolExecutionResponse",
+    # Modifier function types
+    "SchemaModifier",
+    "BeforeExecute",
+    "AfterExecute",
+    # Version and metadata
+    "__version__",
+    "__author__",
+    "__license__",
+]

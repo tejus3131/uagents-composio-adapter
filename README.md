@@ -19,10 +19,10 @@ A production-ready **Composio integration module** for **uAgents framework** wit
 - **💾 Memory Persistence**: PostgreSQL-based conversation memory with automatic schema management
 - **🧵 Thread-Safe Operations**: Proper resource management and connection pooling
 - **📊 Health Monitoring**: Built-in health checks and service monitoring capabilities
-- **🎛️ Tool Modifiers**: Comprehensive support for schema, before-execute, and after-execute modifiers
+- **🎛️ Tool Modifiers**: Comprehensive support for schema, before-execute, and after-execute modifiers with simple function-to-tools mapping syntax
 - **🎭 Multi-Agent Orchestrator**: Intelligent orchestrator agent that routes requests to specialized tool agents
 - **👤 Persona Customization**: Configurable persona prompts to guide orchestrator agent behavior and decision-making
-- **🤖 Specialized Agents**: Automatic creation of specialized agents for different tool groups with optimized prompts
+- **🤖 Specialized Agents**: Automatic creation of specialized agents for different tool groups with optimized prompts and domain-specific capabilities
 
 ## 📦 Installation
 
@@ -70,6 +70,8 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+> **Note**: For advanced use cases with tool modifiers, see the [Tool Modifiers](#tool-modifiers-for-customization) section below.
 
 ### 2. Environment Variables
 
@@ -140,32 +142,29 @@ crm_tools = ToolConfig.from_search(
 ### Tool Modifiers for Customization
 
 ```python
-from uagents_composio_adapter import Modifiers, schema_modifier, before_execute, after_execute
+from uagents_composio_adapter import Modifiers, ToolExecutionResponse
 
-# Schema modifier to enhance tool descriptions
-@schema_modifier(tools=["GITHUB_CREATE_AN_ISSUE"])
+# Define modifier functions (no decorators needed)
 def enhance_github_schema(tool_name: str, toolkit: str, schema):
     schema.description += " [Enhanced with context awareness]"
     return schema
 
 # Before-execute modifier to inject parameters
-@before_execute(tools=["SLACK_SEND_MESSAGE"])
 def add_slack_context(tool_name: str, toolkit: str, params):
     if 'channel' not in params.arguments:
         params.arguments['channel'] = '#general'
     return params
 
 # After-execute modifier to process results
-@after_execute(tools=["GMAIL_SEND_EMAIL"])
-def log_email_sent(tool_name: str, toolkit: str, response):
+def log_email_sent(tool_name: str, toolkit: str, response: ToolExecutionResponse) -> ToolExecutionResponse:
     print(f"Email sent successfully via {tool_name}")
     return response
 
-# Combine modifiers
+# Combine modifiers using function-to-tools mapping
 modifiers = Modifiers.combine(
-    schema_functions=[enhance_github_schema],
-    before_execute_functions=[add_slack_context],
-    after_execute_functions=[log_email_sent]
+    schema_functions={enhance_github_schema: ["GITHUB_CREATE_AN_ISSUE"]},
+    before_execute_functions={add_slack_context: ["SLACK_SEND_MESSAGE"]},
+    after_execute_functions={log_email_sent: ["GMAIL_SEND_EMAIL"]}
 )
 
 # Apply to tool configuration
@@ -174,6 +173,33 @@ config = ToolConfig.from_toolkit(
     auth_config_id="auth_123",
     toolkit="GITHUB",
     modifiers=modifiers
+)
+```
+
+### Real-World Modifier Example
+
+```python
+from uagents_composio_adapter import ToolConfig, Modifiers, ToolExecutionResponse
+
+# After-execute modifier to log LinkedIn data loading
+def show_loaded_linkedin_data(
+    tool: str,
+    toolkit: str,
+    response: ToolExecutionResponse
+) -> ToolExecutionResponse:
+    print(f"\n[LinkedIn Data Loaded] Tool: {tool}, Toolkit: {toolkit}, Response: {response}\n")
+    return response
+
+# Create tool configuration with modifier
+linkedin_tool_config = ToolConfig.from_toolkit(
+    tool_group_name="LinkedIn Marketing",
+    auth_config_id="your_linkedin_auth_config_id",
+    toolkit="LINKEDIN",
+    modifiers=Modifiers.combine(
+        after_execute_functions={
+            show_loaded_linkedin_data: ["LINKEDIN_GET_MY_INFO"]
+        }
+    )
 )
 ```
 
@@ -249,11 +275,10 @@ async def main():
 
     # Create orchestrator service with specialized agents
     async with ComposioService(composio_config=composio_config) as service:
-        # The service automatically creates:
-        # 1. GitHub Management Agent - handles repository operations
-        # 2. Email Operations Agent - manages email tasks
-        # 3. Calendar Management Agent - handles scheduling
-        # 4. Orchestrator Agent - routes requests to appropriate specialists
+        # The service automatically creates specialized agents based on tool configurations:
+        # - One specialized agent for each tool group (e.g., GitHub Management, Email Operations)
+        # - Each agent optimized for its specific domain with tailored prompts and capabilities
+        # - Main Orchestrator Agent that intelligently routes requests to appropriate specialists
 
         agent.include(service.protocol, publish_manifest=True)
         logger.info("🚀 Multi-agent orchestrator system started!")
@@ -272,7 +297,7 @@ import logging
 from uagents import Agent
 from uagents_composio_adapter import (
     ComposioConfig, ToolConfig, ComposioService,
-    PostgresMemoryConfig
+    PostgresMemoryConfig, Modifiers, ToolExecutionResponse
 )
 
 # Configure logging
@@ -280,38 +305,54 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def main():
-    # Multiple tool configurations
+    # Define modifier function for LinkedIn data logging
+    def show_loaded_linkedin_data(
+        tool: str,
+        toolkit: str,
+        response: ToolExecutionResponse
+    ) -> ToolExecutionResponse:
+        print(f"\n[LinkedIn Data Loaded] Tool: {tool}, Toolkit: {toolkit}, Response: {response}\n")
+        return response
+
+    # Multiple tool configurations with modifiers
     tool_configs = [
         ToolConfig.from_tools(
-            tool_group_name="GitHub Management",
-            auth_config_id=os.getenv("GITHUB_AUTH_ID"),
-            tools=["GITHUB_CREATE_AN_ISSUE", "GITHUB_LIST_ISSUES"]
+            tool_group_name="Repository Tracker",
+            auth_config_id=os.getenv("GITHUB_AUTH_CONFIG_ID"),
+            tools=[
+                "GITHUB_LIST_COMMITS",
+                "GITHUB_GET_A_COMMIT",
+                "GITHUB_GET_A_REPOSITORY",
+                "GITHUB_COMPARE_TWO_COMMITS",
+                "GITHUB_LIST_RELEASES",
+                "GITHUB_GET_REPOSITORY_CONTENT"
+            ]
         ),
         ToolConfig.from_toolkit(
-            tool_group_name="Slack Communication",
-            auth_config_id=os.getenv("SLACK_AUTH_ID"),
-            toolkit="SLACK",
-            limit=5
-        ),
-        ToolConfig.from_search(
-            tool_group_name="Email Tools",
-            auth_config_id=os.getenv("GMAIL_AUTH_ID"),
-            search="send email compose",
-            limit=3
+            tool_group_name="LinkedIn Marketing",
+            auth_config_id=os.getenv("LINKEDIN_AUTH_CONFIG_ID"),
+            toolkit="LINKEDIN",
+            modifiers=Modifiers.combine(
+                after_execute_functions={
+                    show_loaded_linkedin_data: ["LINKEDIN_GET_MY_INFO"]
+                }
+            )
         )
     ]
 
-    # Create configurations
-    composio_config = ComposioConfig.from_env(tool_configs=tool_configs)
+    # Create configurations with persona prompt
+    composio_config = ComposioConfig.from_env(
+        tool_configs=tool_configs,
+        persona_prompt="You are a productivity-focused AI assistant for building in public..."
+    )
     memory_config = PostgresMemoryConfig.from_env()
 
     # Initialize agent
     agent = Agent(
-        name="Production Composio Agent",
-        seed="production_agent_seed",
+        name="BuildInPublic Agent",
+        seed="build_public_secret_seed_123123",
         port=8001,
-        mailbox=True,
-        publish_agent_details=True
+        mailbox=True
     )
 
     # Run with proper resource management
@@ -328,8 +369,8 @@ async def main():
         # Integrate with agent
         agent.include(service.protocol, publish_manifest=True)
 
-        logger.info("🚀 Production agent started successfully!")
-        agent.run_async()
+        logger.info("🚀 BuildInPublic agent started successfully!")
+        await agent.run_async()
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -349,13 +390,14 @@ if __name__ == "__main__":
 │  │  └─────────────────────────────────────────────┘    │    │
 │  │  ┌─────────────────────────────────────────────┐    │    │
 │  │  │          Orchestrator Agent                 │    │    │
-│  │  │  ┌─────────────┬─────────────┬───────────┐   │    │    │
-│  │  │  │ GitHub      │ Email       │ Calendar  │   │    │    │
-│  │  │  │ Agent       │ Agent       │ Agent     │   │    │    │
-│  │  │  └─────────────┴─────────────┴───────────┘   │    │    │
+│  │  │  ┌─────────────┬─────────────┬───────────┐  │    │    │
+│  │  │  │ Tool Group  │ Tool Group  │   ...     │  │    │    │
+│  │  │  │ Agent A     │ Agent B     │ Agent N   │  │    │    │
+│  │  │  └─────────────┴─────────────┴───────────┘  │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
 │  │  ┌─────────────────────────────────────────────┐    │    │
 │  │  │           Tool Management                   │    │    │
+│  │  │        (Dynamic Tool Groups)                │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────┘    │
 ├─────────────────────────────────────────────────────────────┤
@@ -392,7 +434,7 @@ git clone https://github.com/tejus3131/uagents-composio-adapter.git
 cd uagents-composio-adapter
 
 # Install in development mode
-pip install -e ".[dev,examples]"
+pip install -e ".[dev]"
 
 # Install pre-commit hooks
 pre-commit install
@@ -476,13 +518,16 @@ Tool modifier management for customization.
 ```python
 class Modifiers:
     @classmethod
-    def with_schema(cls, *modifiers: SchemaModifierFunc) -> "Modifiers": ...
+    def with_schema(cls, modifiers: dict[SchemaModifierFunc, list[str]]) -> "Modifiers": ...
 
     @classmethod
-    def with_before_execute(cls, *modifiers: BeforeExecuteModifierFunc) -> "Modifiers": ...
+    def with_before_execute(cls, modifiers: dict[BeforeExecuteModifierFunc, list[str]]) -> "Modifiers": ...
 
     @classmethod
-    def combine(cls, schema_functions: list | None = None, before_execute_functions: list | None = None, after_execute_functions: list | None = None) -> "Modifiers": ...
+    def with_after_execute(cls, modifiers: dict[AfterExecuteModifierFunc, list[str]]) -> "Modifiers": ...
+
+    @classmethod
+    def combine(cls, schema_functions: dict | None = None, before_execute_functions: dict | None = None, after_execute_functions: dict | None = None) -> "Modifiers": ...
 ```
 
 ## 🤝 Contributing

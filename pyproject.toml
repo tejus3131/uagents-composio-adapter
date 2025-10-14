@@ -9,8 +9,22 @@ authors = [
 ]
 keywords = ["uagents", "composio", "langchain", "ai", "agents", "automation", "tools"]
 classifiers = [
-
-
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Communications :: Chat",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Office/Business :: Groupware",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -45,7 +59,6 @@ dev = [
 Homepage = "https://github.com/tejus3131/uagents-composio-adapter"
 Repository = "https://github.com/tejus3131/uagents-composio-adapter"
 Documentation = "https://github.com/tejus3131/uagents-composio-adapter#readme"
-Issues = "https://github.com/tejus3131/uagents-composio-adapter/issues"
 
 [build-system]
 requires = ["hatchling"]

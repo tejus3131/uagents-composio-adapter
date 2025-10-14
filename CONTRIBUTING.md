@@ -28,18 +28,12 @@ Thank you for your interest in contributing to the uAgents Composio Adapter! Thi
 
 3. **Install development dependencies**
    ```bash
-   pip install -e ".[dev,examples]"
+   pip install -e ".[dev]"
    ```
 
 4. **Set up pre-commit hooks**
    ```bash
    pre-commit install
-   ```
-
-5. **Set up environment variables for testing**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and configuration
    ```
 
 ## 🧪 Running Tests
